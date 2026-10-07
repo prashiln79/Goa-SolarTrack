@@ -7,12 +7,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
-  SafeAreaView,
   TouchableOpacity,
   Text,
   StatusBar as RNStatusBar,
-  Platform,
 } from 'react-native';
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -68,11 +70,11 @@ interface NavTab {
 }
 
 const TABS: NavTab[] = [
-  { key: 'home',      label: 'Home',      icon: 'sunny-outline',       iconActive: 'sunny',         color: COLORS.gold },
+  { key: 'home',      label: 'Home',      icon: 'sunny-outline',         iconActive: 'sunny',         color: COLORS.gold },
   { key: 'bills',     label: 'Bills',     icon: 'document-text-outline', iconActive: 'document-text', color: COLORS.gold },
-  { key: 'analytics', label: 'Analytics', icon: 'bar-chart-outline',   iconActive: 'bar-chart',     color: COLORS.gold },
-  { key: 'care',      label: 'Care',      icon: 'water-outline',       iconActive: 'water',         color: COLORS.info },
-  { key: 'settings',  label: 'Settings',  icon: 'settings-outline',    iconActive: 'settings',      color: COLORS.gold },
+  { key: 'analytics', label: 'Analytics', icon: 'bar-chart-outline',    iconActive: 'bar-chart',     color: COLORS.gold },
+  { key: 'care',      label: 'Care',      icon: 'water-outline',         iconActive: 'water',         color: COLORS.gold },
+  { key: 'settings',  label: 'Settings',  icon: 'settings-outline',     iconActive: 'settings',      color: COLORS.gold },
 ];
 
 // ── Default Care Assessment ───────────────────────────────────
@@ -92,7 +94,8 @@ const DEFAULT_CARE: CareAssessment = {
 };
 
 // ── App ───────────────────────────────────────────────────────
-export default function App() {
+function MainApp() {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab]           = useState<Tab>('home');
   const [bills, setBills]                   = useState<SolarBill[]>([]);
   const [cleanings, setCleanings]           = useState<CleaningEvent[]>([]);
@@ -190,10 +193,14 @@ export default function App() {
     await loadAll();
   };
 
+  // Android safe-area insets (status bar top + nav bar bottom)
+  const topInset = Math.max(insets.top, RNStatusBar.currentHeight ?? 0);
+  const bottomInset = Math.max(insets.bottom, 16);
+
   // ── Render ────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="light" />
+    <View style={[styles.rootContainer, { paddingTop: topInset }]}>
+      <StatusBar style="dark" />
 
       {/* Header */}
       <AppHeader
@@ -252,7 +259,14 @@ export default function App() {
       </View>
 
       {/* Bottom Navigation — PRD §4.2 */}
-      <View style={styles.tabBar}>
+      <View
+        style={[
+          styles.tabBar,
+          {
+            paddingBottom: bottomInset + (insets.bottom > 0 ? 6 : SPACING.sm),
+          },
+        ]}
+      >
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key;
           const color = isActive ? (tab.color ?? COLORS.gold) : COLORS.textMuted;
@@ -290,16 +304,23 @@ export default function App() {
         onClose={() => setIsAddCleanOpen(false)}
         onSave={handleSaveCleaning}
       />
-    </SafeAreaView>
+    </View>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <MainApp />
+    </SafeAreaProvider>
   );
 }
 
 // ── Styles ────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: {
+  rootContainer: {
     flex: 1,
     backgroundColor: COLORS.surface,
-    paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0,
   },
   screenContainer: {
     flex: 1,
@@ -311,7 +332,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
     paddingTop: SPACING.sm,
-    paddingBottom: Platform.OS === 'ios' ? SPACING.lg : SPACING.sm,
   },
   tabItem: {
     flex: 1,

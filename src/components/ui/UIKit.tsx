@@ -16,7 +16,7 @@ interface CardProps {
 export const Card: React.FC<CardProps> = ({
   title, subtitle, badge, footer, style, contentStyle, children,
 }) => (
-  <View style={[styles.card, style, SHADOW.card]}>
+  <View style={[styles.card, style]}>
     {(title || badge) && (
       <View style={styles.cardHeader}>
         <View style={{ flex: 1 }}>
@@ -35,23 +35,15 @@ export const Card: React.FC<CardProps> = ({
 interface BadgeProps {
   label: string;
   color?: string;
-  bgOpacity?: number;
 }
 
 export const Badge: React.FC<BadgeProps> = ({
-  label, color = COLORS.gold, bgOpacity = 0.15,
-}) => {
-  const bg = color
-    .replace('rgb', 'rgba')
-    .replace(')', `, ${bgOpacity})`)
-    .replace('#', '');
-  // Simpler approach
-  return (
-    <View style={[styles.badge, { borderColor: `${color}66`, backgroundColor: `${color}22` }]}>
-      <Text style={[styles.badgeText, { color }]}>{label}</Text>
-    </View>
-  );
-};
+  label, color = COLORS.gold,
+}) => (
+  <View style={[styles.badge, { borderColor: `${color}44`, backgroundColor: `${color}15` }]}>
+    <Text style={[styles.badgeText, { color }]}>{label}</Text>
+  </View>
+);
 
 // ── Stat Item ─────────────────────────────────────────────────
 interface StatItemProps {
@@ -91,8 +83,8 @@ interface InfoNoteProps {
 export const InfoNote: React.FC<InfoNoteProps> = ({
   text, color = COLORS.gold, style,
 }) => (
-  <View style={[styles.infoNote, { borderColor: `${color}44`, backgroundColor: `${color}0F` }, style]}>
-    <Text style={[styles.infoNoteText, { color: `${color}DD` }]}>{text}</Text>
+  <View style={[styles.infoNote, { borderColor: `${color}33`, backgroundColor: `${color}0C` }, style]}>
+    <Text style={[styles.infoNoteText, { color: COLORS.textSub }]}>{text}</Text>
   </View>
 );
 
@@ -146,11 +138,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     marginBottom: SPACING.md,
-    overflow: 'hidden',
+    ...SHADOW.card,
   },
   cardHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.md,
     paddingBottom: SPACING.sm,
@@ -158,16 +150,16 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.borderSubtle,
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: FONT.bold,
-    color: COLORS.textSub,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    color: COLORS.text,
+    letterSpacing: 0.1,
   },
   cardSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: COLORS.textMuted,
-    marginTop: 2,
+    marginTop: 3,
+    lineHeight: 16,
   },
   cardContent: {
     padding: SPACING.md,
@@ -179,16 +171,15 @@ const styles = StyleSheet.create({
 
   // Badge
   badge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: RADIUS.full,
     borderWidth: 1,
   },
   badgeText: {
-    fontSize: 10,
-    fontWeight: FONT.bold,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
+    fontSize: 11,
+    fontWeight: FONT.semi,
+    letterSpacing: 0.2,
   },
 
   // Stat
@@ -199,11 +190,9 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   statLabel: {
-    fontSize: 10,
-    fontWeight: FONT.semi,
+    fontSize: 11,
+    fontWeight: FONT.medium,
     color: COLORS.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
     marginBottom: 2,
   },
   statValueRow: {
@@ -240,13 +229,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   infoNoteText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
 
   // Progress
   progressBg: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: COLORS.borderSubtle,
     borderRadius: RADIUS.full,
     overflow: 'hidden',
   },
@@ -259,15 +248,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 5,
   },
   ledgerLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: COLORS.textSub,
     flex: 1,
   },
   ledgerValue: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: FONT.semi,
     color: COLORS.text,
   },

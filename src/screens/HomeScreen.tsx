@@ -1,11 +1,5 @@
 // ============================================================
-// Home Screen — PRD §4.1 Home information hierarchy
-// 1. Current Billing Period
-// 2. Energy Bank
-// 3. Solar Performance
-// 4. Current Bill
-// 5. Panel Care
-// 6. Annual Settlement
+// Home Screen — Simplified light-theme layout
 // ============================================================
 import React from 'react';
 import {
@@ -13,9 +7,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SolarBill, SystemProfile, CareAssessment } from '../types/solar';
-import {
-  Card, Badge, StatItem, Divider, InfoNote, ProgressBar, LedgerRow,
-} from '../components/ui/UIKit';
+import { Card, Badge, Divider, InfoNote, ProgressBar, LedgerRow } from '../components/ui/UIKit';
 import { estimateRetailBill, projectSettlement } from '../domain/tariffEngine';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
 
@@ -63,8 +55,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         )
       : null;
 
-  const careIsGood = careAssessment.state === 'Good';
-  const careColor = careIsGood ? COLORS.success
+  const careColor = careAssessment.state === 'Good' ? COLORS.success
     : careAssessment.state === 'Watch' ? COLORS.warning
     : COLORS.danger;
 
@@ -73,234 +64,114 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       style={styles.scroll}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh}
-          tintColor={COLORS.gold} colors={[COLORS.gold]} />
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={onRefresh}
+          colors={[COLORS.gold]}
+        />
       }
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Summary Pill Row ── */}
-      <View style={styles.summaryRow}>
-        <SummaryPill label="This Billing Period" value={bill.period} />
-        <SummaryPill label="Energy Bank" value={`${bill.closingCreditKwh} kWh`} color={COLORS.bank} />
-        <SummaryPill label="Net Payable" value={`₹${bill.billAmount.toFixed(0)}`} color={COLORS.gold} />
+      {/* ── Top summary strip ── */}
+      <View style={styles.summaryStrip}>
+        <SummaryChip label="Period" value={bill.period} />
+        <View style={styles.stripDivider} />
+        <SummaryChip label="Energy Bank" value={`${bill.closingCreditKwh} kWh`} valueColor={COLORS.bank} />
+        <View style={styles.stripDivider} />
+        <SummaryChip label="Net Payable" value={`₹${bill.billAmount.toFixed(0)}`} valueColor={COLORS.gold} />
       </View>
 
-      {/* ─── 1. CURRENT BILLING PERIOD (PRD §4.1 item 1) ─── */}
-      <Card
-        title="This Billing Period"
-        subtitle={`${bill.period} • ${days} days`}
-        badge={<Badge label="Active Cycle" color={COLORS.gold} />}
-      >
-        {/* 4-stat energy flow grid */}
-        <View style={styles.statGrid}>
-          <EnergyStatBox
-            icon="sunny"
-            label="Generated"
-            value={bill.generationKwh}
-            color={COLORS.generation}
-            sub={avgPerDay ? `${avgPerDay} kWh/day avg` : undefined}
-            sourceLabel="From meter KWH_G"
-          />
-          <EnergyStatBox
-            icon="arrow-down"
-            label="Imported"
-            value={bill.importKwh}
-            color={COLORS.import}
-            sub="From grid KWH_I"
-            sourceLabel="Measured"
-          />
-          <EnergyStatBox
-            icon="arrow-up"
-            label="Exported"
-            value={bill.exportKwh}
-            color={COLORS.export}
-            sub="Sent to grid KWH_E"
-            sourceLabel="Measured"
-          />
-          <EnergyStatBox
-            icon="flash"
-            label="Direct Use"
-            value={bill.directSolarUseKwh}
-            color={COLORS.directUse}
-            sub="Gen − Export"
-            sourceLabel="Calculated estimate"
-          />
-        </View>
-
-        {/* Estimated total consumption */}
-        {bill.estimatedTotalConsumptionKwh !== null && (
-          <View style={styles.totalRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.totalLabel}>Estimated total household consumption</Text>
-              <Text style={styles.totalDetail}>
-                {bill.directSolarUseKwh} kWh direct solar + {bill.importKwh} kWh grid import
-              </Text>
-              <Text style={styles.estimateTag}>† Calculated estimate from bill values</Text>
-            </View>
-            <Text style={styles.totalValue}>{bill.estimatedTotalConsumptionKwh} kWh</Text>
-          </View>
-        )}
-
-        {/* PRD UX rule: never say "Solar Today" */}
-        <InfoNote
-          text='ℹ️ Figures above are for the full billing cycle, not a single day. "Average generation/day" is shown where available.'
-          color={COLORS.info}
-          style={{ marginTop: SPACING.xs }}
-        />
-      </Card>
-
-      {/* ─── 2. ENERGY BANK (PRD §4.1 item 2) ─── */}
-      <Card
-        title="Energy Bank"
-        subtitle="JERC 2019 net-metering cumulative credit ledger"
-        badge={<Badge label="Active Ledger" color={COLORS.bank} />}
-      >
-        {/* Hero closing credit */}
-        <View style={styles.bankHero}>
-          <Text style={styles.bankHeroLabel}>Available Carried-Forward Credit</Text>
-          <View style={styles.bankHeroValueRow}>
-            <Text style={styles.bankHeroValue}>{bill.closingCreditKwh}</Text>
-            <Text style={styles.bankHeroUnit}> kWh</Text>
-          </View>
-          <Text style={styles.bankHeroSub}>Surplus banked for future billing periods</Text>
-        </View>
-
-        {/* Arithmetic formula display */}
-        <View style={styles.formulaRow}>
-          <FormulaStep value={bill.openingCreditKwh} label="Opening" />
-          <Text style={styles.formulaOp}>+</Text>
-          <FormulaStep value={bill.exportKwh} label="Export" color={COLORS.export} />
-          <Text style={styles.formulaOp}>−</Text>
-          <FormulaStep value={bill.adjustedCreditKwh} label="Adjusted" color={COLORS.import} />
-          <Text style={styles.formulaOp}>=</Text>
-          <FormulaStep value={bill.closingCreditKwh} label="Carried →" color={COLORS.gold} highlight />
-        </View>
-
-        {/* Mismatch warning (PRD §6.1 Bill-first rule) */}
-        {bill.needsReview && (
-          <InfoNote
-            text="⚠️ OCR/bill value differs from calculated value. Please review — bill-stated values are preserved."
-            color={COLORS.danger}
-          />
-        )}
-      </Card>
-
-      {/* ─── 3. SOLAR PERFORMANCE (PRD §4.1 item 3) ─── */}
-      <Card
-        title="Solar Performance"
-        subtitle={`${profile.capacityKw} kW system • ${days}-day billing cycle`}
-        badge={<Badge label="This Billing Period" color={COLORS.generation} />}
-      >
-        <View style={styles.perfRow}>
-          <View style={styles.perfCol}>
-            <Text style={styles.perfLabel}>Generation</Text>
-            <Text style={styles.perfValue}>
-              {bill.generationKwh !== null ? `${bill.generationKwh} kWh` : 'N/A'}
-            </Text>
-            <Text style={styles.perfSub}>
-              {avgPerDay ? `${avgPerDay} kWh/day average` : 'Not available on bill'}
-            </Text>
-          </View>
-          <View style={styles.perfDivider} />
-          <View style={styles.perfCol}>
-            <Text style={styles.perfLabel}>Avoided Cost (est.)</Text>
-            <Text style={[styles.perfValue, { color: COLORS.success }]}>
-              {retailEstimate ? `₹${retailEstimate.estimatedSavingsInr}` : '—'}
-            </Text>
-            <Text style={styles.perfSub}>vs. full retail tariff</Text>
-          </View>
+      {/* ─── 1. Energy Flow ─── */}
+      <Card title="Energy Flow" subtitle={`${bill.period} · ${days} days`}>
+        <View style={styles.flowGrid}>
+          <FlowTile icon="sunny" label="Generated" value={bill.generationKwh} unit="kWh" color={COLORS.generation} note={avgPerDay ? `${avgPerDay}/day avg` : undefined} />
+          <FlowTile icon="arrow-down" label="Imported" value={bill.importKwh} unit="kWh" color={COLORS.import} />
+          <FlowTile icon="arrow-up" label="Exported" value={bill.exportKwh} unit="kWh" color={COLORS.export} />
+          <FlowTile icon="flash" label="Direct Use" value={bill.directSolarUseKwh} unit="kWh" color={COLORS.directUse} />
         </View>
         {retailEstimate && (
-          <Text style={styles.estimateTag}>
-            † Estimated retail equivalent (LTDS-II slabs + fixed charge, excl. FPPCA/duties). Labelled as estimate per PRD §7.2.
-          </Text>
+          <View style={styles.savingsRow}>
+            <Ionicons name="leaf-outline" size={14} color={COLORS.success} />
+            <Text style={styles.savingsText}>
+              Estimated savings vs full retail: <Text style={{ color: COLORS.success, fontWeight: FONT.bold }}>₹{retailEstimate.estimatedSavingsInr}</Text>
+            </Text>
+          </View>
         )}
-        {bills.length < 3 && (
+      </Card>
+
+      {/* ─── 2. Energy Bank ─── */}
+      <Card title="Energy Bank" subtitle="Cumulative net-metering credit">
+        <View style={styles.bankHero}>
+          <Text style={styles.bankValue}>{bill.closingCreditKwh}</Text>
+          <Text style={styles.bankUnit}>kWh carried forward</Text>
+        </View>
+        <View style={styles.formulaRow}>
+          <FormulaStep value={bill.openingCreditKwh} label="Opening" />
+          <Text style={styles.formulaOp}>＋</Text>
+          <FormulaStep value={bill.exportKwh} label="Export" color={COLORS.export} />
+          <Text style={styles.formulaOp}>－</Text>
+          <FormulaStep value={bill.adjustedCreditKwh} label="Used" color={COLORS.import} />
+          <Text style={styles.formulaOp}>＝</Text>
+          <FormulaStep value={bill.closingCreditKwh} label="Balance" color={COLORS.gold} highlight />
+        </View>
+        {bill.needsReview && (
           <InfoNote
-            text="Month-over-month trend will appear after 3+ billing cycles. PRD §8.1."
-            color={COLORS.info}
-            style={{ marginTop: SPACING.xs }}
+            text="⚠️ Bill value differs from calculated. Bill-stated values are preserved."
+            color={COLORS.danger}
+            style={{ marginTop: SPACING.sm }}
           />
         )}
       </Card>
 
-      {/* ─── 4. CURRENT BILL (PRD §4.1 item 4) ─── */}
-      <Card
-        title="Current Bill"
-        subtitle={`Bill #${bill.billNumber ?? 'N/A'} · Due: ${bill.dueDate ?? 'N/A'}`}
-        badge={<Badge label={`₹${bill.billAmount.toFixed(2)}`} color={COLORS.gold} />}
-      >
-        <View style={styles.billBreakdown}>
+      {/* ─── 3. Current Bill ─── */}
+      <Card title="Current Bill" subtitle={`Bill #${bill.billNumber ?? 'N/A'}  ·  Due: ${bill.dueDate ?? 'N/A'}`} badge={<Badge label={`₹${bill.billAmount.toFixed(0)}`} color={COLORS.gold} />}>
+        <View style={styles.billBox}>
           {bill.demandCharges !== undefined && (
             <LedgerRow label="Demand / Fixed Charges" value={`₹${bill.demandCharges.toFixed(2)}`} />
           )}
           {bill.fppca !== undefined && (
-            <LedgerRow label="Fuel & Power Purchase Adjustment (FPPCA)" value={`₹${bill.fppca.toFixed(2)}`} />
+            <LedgerRow label="FPPCA" value={`₹${bill.fppca.toFixed(2)}`} />
           )}
           {bill.rebate !== undefined && bill.rebate !== 0 && (
-            <LedgerRow
-              label="Prompt Payment Rebate"
-              value={`₹${bill.rebate.toFixed(2)}`}
-              valueColor={COLORS.success}
-            />
+            <LedgerRow label="Prompt Payment Rebate" value={`−₹${Math.abs(bill.rebate).toFixed(2)}`} valueColor={COLORS.success} />
           )}
           {bill.otherCharges !== undefined && bill.otherCharges !== 0 && (
             <LedgerRow label="Other Charges" value={`₹${bill.otherCharges.toFixed(2)}`} />
           )}
           <Divider />
-          <LedgerRow
-            label="Energy credit used this period"
-            value={`${bill.adjustedCreditKwh} kWh`}
-            valueColor={COLORS.export}
-          />
-          <LedgerRow
-            label="Energy credit carried forward"
-            value={`${bill.closingCreditKwh} kWh`}
-            valueColor={COLORS.gold}
-          />
+          <LedgerRow label="Credit used this period" value={`${bill.adjustedCreditKwh} kWh`} valueColor={COLORS.export} />
+          <LedgerRow label="Credit carried forward" value={`${bill.closingCreditKwh} kWh`} valueColor={COLORS.gold} />
         </View>
-
-        {/* PRD §7.3 mandatory disclaimer */}
         <InfoNote
-          text="Note: Energy credits offset eligible energy consumption; they are not a promise of a zero-rupee bill. Fixed charges, FPPCA and duties remain payable."
+          text="Fixed charges, FPPCA and duties are payable regardless of energy credits."
           color={COLORS.warning}
           style={{ marginTop: SPACING.sm }}
         />
       </Card>
 
-      {/* ─── 5. PANEL CARE (PRD §4.1 item 5) ─── */}
+      {/* ─── 4. Panel Care ─── */}
       <Card
         title="Panel Care"
-        subtitle={`Last cleaned: ${profile.lastCleanedDate ?? 'Not recorded'} (${careAssessment.daysSinceLastClean}d ago)`}
-        badge={
-          <Badge
-            label={careAssessment.state}
-            color={careColor}
-          />
-        }
+        subtitle={`Last cleaned: ${profile.lastCleanedDate ?? 'Not recorded'}`}
+        badge={<Badge label={careAssessment.state} color={careColor} />}
       >
-        <View style={styles.careBody}>
-          <View style={styles.careTextCol}>
-            <Text style={[styles.careStatus, { color: careColor }]}>{careAssessment.state}</Text>
-            <Text style={styles.careRationale}>{careAssessment.rationale}</Text>
-            <Text style={styles.careRecommendation}>{careAssessment.recommendation}</Text>
-          </View>
-        </View>
-
+        <Text style={styles.careRationale}>{careAssessment.rationale}</Text>
+        {careAssessment.recommendation ? (
+          <Text style={styles.careRecommendation}>{careAssessment.recommendation}</Text>
+        ) : null}
         <ProgressBar
           value={100 - careAssessment.score}
           color={careColor}
-          height={7}
-          style={{ marginTop: SPACING.sm }}
+          height={8}
+          style={{ marginTop: SPACING.md }}
         />
         <View style={styles.progressLabels}>
-          <Text style={styles.progressLabelLeft}>Clean & Optimal</Text>
-          <Text style={[styles.progressLabelRight, { color: careColor }]}>
-            Health: {100 - careAssessment.score}%
+          <Text style={styles.progressLabel}>Clean</Text>
+          <Text style={[styles.progressLabel, { color: careColor, fontWeight: FONT.semi }]}>
+            {100 - careAssessment.score}% health
           </Text>
-          <Text style={styles.progressLabelEnd}>Needs Wash</Text>
+          <Text style={styles.progressLabel}>Needs Wash</Text>
         </View>
-
         <View style={styles.careActions}>
           <TouchableOpacity
             id="btn-log-clean-home"
@@ -308,7 +179,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onPress={onLogClean}
             activeOpacity={0.8}
           >
-            <Ionicons name="water-outline" size={15} color={COLORS.textInverse} />
+            <Ionicons name="water-outline" size={16} color={COLORS.textInverse} />
             <Text style={styles.logCleanText}>Log Panel Wash</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -316,84 +187,79 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             style={styles.viewCareBtn}
             onPress={onNavigateCare}
           >
-            <Text style={styles.viewCareText}>Full Care Report →</Text>
+            <Text style={styles.viewCareText}>Full Report →</Text>
           </TouchableOpacity>
         </View>
       </Card>
 
-      {/* ─── 6. ANNUAL SETTLEMENT (PRD §4.1 item 6) ─── */}
-      <Card
-        title="Annual Settlement Outlook"
-        subtitle="Financial Year 1 Apr – 31 Mar · JERC 2019 Regulations"
-        badge={<Badge label="JERC Rules" color={COLORS.gold} />}
-      >
-        {settlement ? (
-          <>
-            <View style={styles.settlementRow}>
-              <View style={styles.settlementCol}>
-                <Text style={styles.settlementLabel}>Banked Credit</Text>
-                <Text style={styles.settlementVal}>{settlement.bankedCreditKwh} kWh</Text>
-              </View>
-              <Text style={styles.settlementOp}>×</Text>
-              <View style={styles.settlementCol}>
-                <Text style={styles.settlementLabel}>APPC Rate</Text>
-                <Text style={styles.settlementVal}>₹{settlement.ratePerKwh}/kWh</Text>
-              </View>
-              <Text style={styles.settlementOp}>=</Text>
-              <View style={styles.settlementColHighlight}>
-                <Text style={styles.settlementLabelGreen}>Projected</Text>
-                <Text style={styles.settlementValGreen}>₹{settlement.projectedPayoutInr.toFixed(0)}</Text>
-              </View>
+      {/* ─── 5. Annual Settlement ─── */}
+      {settlement ? (
+        <Card title="Annual Settlement Outlook" subtitle="FY 1 Apr – 31 Mar · JERC 2019">
+          <View style={styles.settlementRow}>
+            <View style={styles.settlementCol}>
+              <Text style={styles.settlementLabel}>Banked</Text>
+              <Text style={styles.settlementVal}>{settlement.bankedCreditKwh} kWh</Text>
             </View>
-            <InfoNote
-              text={`Estimate only — actual settlement computed by EDG by 30 Apr, payable by 31 May. ${settlement.note}`}
-              color={COLORS.warning}
-              style={{ marginTop: SPACING.sm }}
-            />
-          </>
-        ) : (
+            <Text style={styles.formulaOp}>×</Text>
+            <View style={styles.settlementCol}>
+              <Text style={styles.settlementLabel}>APPC Rate</Text>
+              <Text style={styles.settlementVal}>₹{settlement.ratePerKwh}/kWh</Text>
+            </View>
+            <Text style={styles.formulaOp}>＝</Text>
+            <View style={[styles.settlementCol, styles.settlementHighlight]}>
+              <Text style={[styles.settlementLabel, { color: COLORS.success }]}>Projected</Text>
+              <Text style={[styles.settlementVal, { color: COLORS.success, fontSize: 20 }]}>
+                ₹{settlement.projectedPayoutInr.toFixed(0)}
+              </Text>
+            </View>
+          </View>
           <InfoNote
-            text="Configure the APPC settlement rate in Settings to see a projected annual settlement value. Rate must be confirmed from current JERC announcement."
-            color={COLORS.info}
+            text="Estimate only — actual settlement computed by EDG by 30 Apr."
+            color={COLORS.warning}
+            style={{ marginTop: SPACING.sm }}
           />
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <InfoNote
+          text="Set the APPC settlement rate in Settings to see your annual payout estimate."
+          color={COLORS.info}
+        />
+      )}
     </ScrollView>
   );
 };
 
 // ── Sub-Components ────────────────────────────────────────────
 
-const SummaryPill: React.FC<{ label: string; value: string; color?: string }> = ({
-  label, value, color = COLORS.text,
+const SummaryChip: React.FC<{ label: string; value: string; valueColor?: string }> = ({
+  label, value, valueColor = COLORS.text,
 }) => (
-  <View style={styles.summaryPill}>
-    <Text style={styles.summaryPillLabel}>{label}</Text>
-    <Text style={[styles.summaryPillValue, { color }]}>{value}</Text>
+  <View style={styles.chip}>
+    <Text style={styles.chipLabel}>{label}</Text>
+    <Text style={[styles.chipValue, { color: valueColor }]}>{value}</Text>
   </View>
 );
 
-const EnergyStatBox: React.FC<{
+const FlowTile: React.FC<{
   icon: string; label: string; value: number | null;
-  color: string; sub?: string; sourceLabel?: string;
-}> = ({ icon, label, value, color, sub, sourceLabel }) => (
-  <View style={[styles.energyBox, { borderColor: `${color}44` }]}>
-    <View style={styles.energyBoxHeader}>
+  unit: string; color: string; note?: string;
+}> = ({ icon, label, value, unit, color, note }) => (
+  <View style={[styles.flowTile, { borderTopColor: color, borderTopWidth: 3 }]}>
+    <View style={styles.flowTileHeader}>
       <Ionicons name={icon as any} size={14} color={color} />
-      <Text style={styles.energyBoxLabel}>{label}</Text>
+      <Text style={[styles.flowTileLabel, { color }]}>{label}</Text>
     </View>
-    <Text style={[styles.energyBoxValue, { color }]}>
-      {value !== null ? value : 'N/A'}
+    <Text style={styles.flowTileValue}>
+      {value !== null ? value : '—'}
     </Text>
-    {value !== null && <Text style={styles.energyBoxUnit}>kWh</Text>}
-    {sub && <Text style={styles.energyBoxSub}>{sub}</Text>}
-    {sourceLabel && <Text style={styles.energySourceTag}>{sourceLabel}</Text>}
+    <Text style={styles.flowTileUnit}>{value !== null ? unit : ''}</Text>
+    {note && <Text style={styles.flowTileNote}>{note}</Text>}
   </View>
 );
 
 const FormulaStep: React.FC<{
   value: number; label: string; color?: string; highlight?: boolean;
-}> = ({ value, label, color = COLORS.text, highlight }) => (
+}> = ({ value, label, color = COLORS.textSub, highlight }) => (
   <View style={[styles.formulaStep, highlight && styles.formulaStepHighlight]}>
     <Text style={[styles.formulaValue, { color }]}>{value}</Text>
     <Text style={styles.formulaLabel}>{label}</Text>
@@ -404,19 +270,19 @@ const EmptyState: React.FC<{
   onAddBill: () => void; onSeedCanonical: () => void;
 }> = ({ onAddBill, onSeedCanonical }) => (
   <View style={styles.emptyContainer}>
-    <Ionicons name="sunny-outline" size={48} color={COLORS.gold} />
+    <View style={styles.emptyIconWrap}>
+      <Ionicons name="sunny-outline" size={44} color={COLORS.gold} />
+    </View>
     <Text style={styles.emptyTitle}>Welcome to Goa SolarTrack</Text>
     <Text style={styles.emptySub}>
-      Your bill-first rooftop solar accounting assistant for Goa electricity prosumers.
-      {'\n\n'}Add your first monthly bill to get started, or load the canonical August 2026 test fixture.
+      Add your first monthly bill to begin tracking your rooftop solar production in Goa.
     </Text>
     <TouchableOpacity id="btn-add-bill-empty" style={styles.emptyAddBtn} onPress={onAddBill}>
       <Ionicons name="add-circle" size={18} color={COLORS.textInverse} />
       <Text style={styles.emptyAddBtnText}>Add Monthly Bill</Text>
     </TouchableOpacity>
     <TouchableOpacity id="btn-seed-canonical" style={styles.emptySeedBtn} onPress={onSeedCanonical}>
-      <Ionicons name="sparkles-outline" size={16} color={COLORS.gold} />
-      <Text style={styles.emptySeedBtnText}>Load Canonical August 2026 Test Bill</Text>
+      <Text style={styles.emptySeedText}>Load sample Aug 2026 bill</Text>
     </TouchableOpacity>
   </View>
 );
@@ -426,127 +292,151 @@ const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: COLORS.background },
   content: { padding: SPACING.lg, paddingBottom: SPACING.xxl + 20 },
 
-  summaryRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.md },
-  summaryPill: {
-    flex: 1, backgroundColor: COLORS.surface, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.border, padding: SPACING.sm, alignItems: 'center',
+  // Summary strip
+  summaryStrip: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: SPACING.md,
+    ...SHADOW.card,
   },
-  summaryPillLabel: { fontSize: 9, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
-  summaryPillValue: { fontSize: 13, fontWeight: FONT.bold, color: COLORS.text, marginTop: 2 },
-
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.sm },
-  energyBox: {
-    flex: 1, minWidth: '46%', backgroundColor: COLORS.surfaceRaised,
-    borderRadius: RADIUS.md, borderWidth: 1, padding: SPACING.sm + 2,
+  chip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.xs,
   },
-  energyBoxHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
-  energyBoxLabel: { fontSize: 10, fontWeight: FONT.semi, color: COLORS.textMuted, textTransform: 'uppercase' },
-  energyBoxValue: { fontSize: 22, fontWeight: FONT.heavy },
-  energyBoxUnit: { fontSize: 11, color: COLORS.textMuted, marginTop: -2 },
-  energyBoxSub: { fontSize: 10, color: COLORS.textSub, marginTop: 2 },
-  energySourceTag: { fontSize: 9, color: COLORS.textMuted, marginTop: 2, fontStyle: 'italic' },
+  chipLabel: { fontSize: 11, color: COLORS.textMuted, marginBottom: 4 },
+  chipValue: { fontSize: 15, fontWeight: FONT.bold },
+  stripDivider: { width: 1, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
 
-  totalRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: COLORS.surfaceRaised, borderRadius: RADIUS.md, padding: SPACING.md,
-    borderWidth: 1, borderColor: COLORS.borderSubtle, marginTop: SPACING.xs,
+  // Flow grid
+  flowGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
   },
-  totalLabel: { fontSize: 12, fontWeight: FONT.semi, color: COLORS.text },
-  totalDetail: { fontSize: 10, color: COLORS.textSub, marginTop: 2 },
-  estimateTag: { fontSize: 9, color: COLORS.textMuted, fontStyle: 'italic', marginTop: 4 },
-  totalValue: { fontSize: 16, fontWeight: FONT.heavy, color: COLORS.text },
-
-  bankHero: {
-    backgroundColor: COLORS.glowGreen, borderRadius: RADIUS.md, borderWidth: 1,
-    borderColor: `${COLORS.bank}44`, padding: SPACING.md, alignItems: 'center',
+  flowTile: {
+    flex: 1,
+    minWidth: '46%',
+    backgroundColor: COLORS.surfaceRaised,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
   },
-  bankHeroLabel: { fontSize: 11, fontWeight: FONT.semi, color: COLORS.textSub, textTransform: 'uppercase' },
-  bankHeroValueRow: { flexDirection: 'row', alignItems: 'baseline', marginVertical: 4 },
-  bankHeroValue: { fontSize: 36, fontWeight: FONT.heavy, color: COLORS.text },
-  bankHeroUnit: { fontSize: 16, fontWeight: FONT.semi, color: COLORS.bank },
-  bankHeroSub: { fontSize: 11, color: COLORS.textSub },
+  flowTileHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: SPACING.xs },
+  flowTileLabel: { fontSize: 11, fontWeight: FONT.semi },
+  flowTileValue: { fontSize: 26, fontWeight: FONT.heavy, color: COLORS.text, marginTop: 2 },
+  flowTileUnit: { fontSize: 12, color: COLORS.textMuted },
+  flowTileNote: { fontSize: 11, color: COLORS.textMuted, marginTop: 4 },
+  savingsRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.glowGreen,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    borderWidth: 1, borderColor: `${COLORS.success}22`,
+  },
+  savingsText: { fontSize: 13, color: COLORS.textSub, flex: 1 },
 
+  // Energy bank
+  bankHero: { alignItems: 'center', paddingVertical: SPACING.md },
+  bankValue: { fontSize: 48, fontWeight: FONT.heavy, color: COLORS.bank },
+  bankUnit: { fontSize: 14, color: COLORS.textMuted, marginTop: 2 },
   formulaRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: COLORS.surfaceRaised, borderRadius: RADIUS.md,
-    padding: SPACING.md, marginTop: SPACING.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.surfaceRaised,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   formulaStep: { alignItems: 'center', flex: 1 },
   formulaStepHighlight: {
-    backgroundColor: COLORS.glowGold, borderRadius: RADIUS.sm,
-    borderWidth: 1, borderColor: `${COLORS.gold}44`, padding: 4,
+    backgroundColor: COLORS.glowGold,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: `${COLORS.gold}33`,
+    paddingVertical: 4,
   },
-  formulaValue: { fontSize: 16, fontWeight: FONT.heavy, color: COLORS.text },
-  formulaLabel: { fontSize: 9, color: COLORS.textMuted, marginTop: 2 },
-  formulaOp: { fontSize: 14, color: COLORS.textMuted, fontWeight: FONT.bold, paddingHorizontal: 2 },
+  formulaValue: { fontSize: 15, fontWeight: FONT.heavy, color: COLORS.text },
+  formulaLabel: { fontSize: 10, color: COLORS.textMuted, marginTop: 2 },
+  formulaOp: { fontSize: 13, color: COLORS.textMuted, fontWeight: FONT.bold, paddingHorizontal: 2 },
 
-  perfRow: {
-    flexDirection: 'row', backgroundColor: COLORS.surfaceRaised,
-    borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.borderSubtle, padding: SPACING.md,
-  },
-  perfCol: { flex: 1, alignItems: 'center' },
-  perfDivider: { width: 1, backgroundColor: COLORS.border, marginHorizontal: SPACING.sm },
-  perfLabel: { fontSize: 11, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
-  perfValue: { fontSize: 20, fontWeight: FONT.heavy, color: COLORS.text, marginVertical: 2 },
-  perfSub: { fontSize: 10, color: COLORS.textSub, textAlign: 'center' },
-
-  billBreakdown: {
-    backgroundColor: COLORS.surfaceRaised, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.borderSubtle, padding: SPACING.md,
+  // Bill breakdown
+  billBox: {
+    backgroundColor: COLORS.surfaceRaised,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
   },
 
-  careBody: { flexDirection: 'row', gap: SPACING.md, alignItems: 'flex-start' },
-  careTextCol: { flex: 1 },
-  careStatus: { fontSize: 14, fontWeight: FONT.bold },
-  careRationale: { fontSize: 12, color: COLORS.textSub, marginTop: 4, lineHeight: 17 },
-  careRecommendation: { fontSize: 11, color: COLORS.textMuted, marginTop: 4, lineHeight: 16, fontStyle: 'italic' },
-  progressLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
-  progressLabelLeft: { fontSize: 9, color: COLORS.textMuted },
-  progressLabelRight: { fontSize: 9, fontWeight: FONT.bold },
-  progressLabelEnd: { fontSize: 9, color: COLORS.textMuted },
-  careActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
+  // Care
+  careRationale: { fontSize: 14, color: COLORS.textSub, lineHeight: 21, marginBottom: 4 },
+  careRecommendation: { fontSize: 13, color: COLORS.textMuted, lineHeight: 19, fontStyle: 'italic' },
+  progressLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  progressLabel: { fontSize: 11, color: COLORS.textMuted },
+  careActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md },
   logCleanBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, backgroundColor: COLORS.info, padding: 10, borderRadius: RADIUS.md,
+    flex: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, backgroundColor: COLORS.gold, padding: 12, borderRadius: RADIUS.md,
+    elevation: 1,
   },
-  logCleanText: { fontSize: 13, fontWeight: FONT.bold, color: COLORS.textInverse },
+  logCleanText: { fontSize: 14, fontWeight: FONT.bold, color: COLORS.textInverse },
   viewCareBtn: {
-    paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center',
     borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border,
   },
-  viewCareText: { fontSize: 12, color: COLORS.textSub, fontWeight: FONT.semi },
+  viewCareText: { fontSize: 13, color: COLORS.textSub, fontWeight: FONT.semi },
 
+  // Settlement
   settlementRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: COLORS.surfaceRaised, borderRadius: RADIUS.md, padding: SPACING.md,
+    backgroundColor: COLORS.surfaceRaised, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: COLORS.border, padding: SPACING.md,
   },
   settlementCol: { alignItems: 'center', flex: 1 },
-  settlementColHighlight: {
-    alignItems: 'center', flex: 1.2, backgroundColor: COLORS.glowGreen,
-    borderRadius: RADIUS.sm, borderWidth: 1, borderColor: `${COLORS.success}44`, paddingVertical: 6,
+  settlementHighlight: {
+    backgroundColor: COLORS.glowGreen,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: `${COLORS.success}33`,
+    paddingVertical: 6,
   },
-  settlementLabel: { fontSize: 10, color: COLORS.textMuted },
-  settlementLabelGreen: { fontSize: 10, fontWeight: FONT.bold, color: COLORS.success },
-  settlementVal: { fontSize: 15, fontWeight: FONT.bold, color: COLORS.text },
-  settlementValGreen: { fontSize: 18, fontWeight: FONT.heavy, color: COLORS.success },
-  settlementOp: { fontSize: 14, color: COLORS.textMuted, fontWeight: FONT.bold },
+  settlementLabel: { fontSize: 11, color: COLORS.textMuted },
+  settlementVal: { fontSize: 16, fontWeight: FONT.bold, color: COLORS.text, marginTop: 2 },
 
+  // Empty state
   emptyContainer: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     padding: SPACING.xl, gap: SPACING.md,
   },
-  emptyTitle: { fontSize: 20, fontWeight: FONT.heavy, color: COLORS.text, textAlign: 'center' },
-  emptySub: { fontSize: 13, color: COLORS.textSub, textAlign: 'center', lineHeight: 19 },
+  emptyIconWrap: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: COLORS.glowGold,
+    borderWidth: 1, borderColor: `${COLORS.gold}33`,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  emptyTitle: { fontSize: 22, fontWeight: FONT.heavy, color: COLORS.text, textAlign: 'center' },
+  emptySub: { fontSize: 14, color: COLORS.textMuted, textAlign: 'center', lineHeight: 21 },
   emptyAddBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.gold,
-    paddingHorizontal: SPACING.lg, paddingVertical: 13, borderRadius: RADIUS.full,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.gold,
+    paddingHorizontal: SPACING.xl, paddingVertical: 14,
+    borderRadius: RADIUS.full,
     ...SHADOW.glow,
   },
-  emptyAddBtnText: { fontSize: 14, fontWeight: FONT.bold, color: COLORS.textInverse },
+  emptyAddBtnText: { fontSize: 15, fontWeight: FONT.bold, color: COLORS.textInverse },
   emptySeedBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: COLORS.glowGold, borderWidth: 1, borderColor: `${COLORS.gold}44`,
-    paddingHorizontal: SPACING.lg, paddingVertical: 11, borderRadius: RADIUS.full,
+    paddingVertical: 10,
   },
-  emptySeedBtnText: { fontSize: 13, fontWeight: FONT.semi, color: COLORS.gold },
+  emptySeedText: { fontSize: 13, color: COLORS.textMuted, textDecorationLine: 'underline' },
 });
