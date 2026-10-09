@@ -25,7 +25,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "node --experimental-strip-types scripts/test_pdf_parser.mjs"
+    "test": "node --experimental-strip-types scripts/test_pdf_parser.mjs",
+    "build:apk": "eas build -p android --profile preview"
   },
   "private": true
 }
