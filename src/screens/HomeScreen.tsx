@@ -1,7 +1,7 @@
 // ============================================================
 // Home Screen — Simplified light-theme layout
 // ============================================================
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
 } from 'react-native';
@@ -55,7 +55,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         )
       : null;
 
-  // ── All-time aggregates for the summary strip ──
+  // ── Scope toggle for Energy Flow (Latest Month vs All Bills) ──
+  const [flowScope, setFlowScope] = useState<'month' | 'all'>('month');
+
+  // ── All-time aggregates for the summary strip & all-time flow ──
+  const allTimeGeneration = bills.reduce((sum, b) => sum + (b.generationKwh ?? 0), 0);
+  const allTimeImport = bills.reduce((sum, b) => sum + b.importKwh, 0);
+  const allTimeExport = bills.reduce((sum, b) => sum + b.exportKwh, 0);
+  const allTimeDirectUse = bills.reduce((sum, b) => sum + (b.directSolarUseKwh ?? 0), 0);
+
+  const displayGen = flowScope === 'month' ? bill.generationKwh : allTimeGeneration;
+  const displayImp = flowScope === 'month' ? bill.importKwh : allTimeImport;
+  const displayExp = flowScope === 'month' ? bill.exportKwh : allTimeExport;
+  const displayDirect = flowScope === 'month' ? bill.directSolarUseKwh : allTimeDirectUse;
+
   const allTimeTotalBill = bills.reduce((sum, b) => sum + b.billAmount, 0);
   const allTimeTotalSavings = bills.reduce((sum, b) => {
     if (b.estimatedTotalConsumptionKwh === null) return sum;
@@ -104,18 +117,79 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </View>
 
       {/* ─── 1. Energy Flow ─── */}
-      <Card title="Energy Flow" subtitle=''>
+      <Card
+        title="Energy Flow"
+        subtitle={
+          flowScope === 'month'
+            ? `${bill.period} (Latest Bill)`
+            : `All Bills Total (${bills.length} bills · ${allTimePeriodLabel})`
+        }
+        badge={
+          bills.length > 1 ? (
+            <View style={styles.scopeToggle}>
+              <TouchableOpacity
+                id="btn-flow-scope-month"
+                style={[styles.scopeBtn, flowScope === 'month' && styles.scopeBtnActive]}
+                onPress={() => setFlowScope('month')}
+              >
+                <Text style={[styles.scopeBtnText, flowScope === 'month' && styles.scopeBtnTextActive]}>
+                  Month
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                id="btn-flow-scope-all"
+                style={[styles.scopeBtn, flowScope === 'all' && styles.scopeBtnActive]}
+                onPress={() => setFlowScope('all')}
+              >
+                <Text style={[styles.scopeBtnText, flowScope === 'all' && styles.scopeBtnTextActive]}>
+                  All ({bills.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Badge label={bill.period} color={COLORS.gold} />
+          )
+        }
+      >
         <View style={styles.flowGrid}>
-          <FlowTile icon="sunny" label="Generated" value={bill.generationKwh} unit="kWh" color={COLORS.generation} note={avgPerDay ? `${avgPerDay}/day avg` : undefined} />
-          <FlowTile icon="arrow-down" label="Imported" value={bill.importKwh} unit="kWh" color={COLORS.import} />
-          <FlowTile icon="arrow-up" label="Exported" value={bill.exportKwh} unit="kWh" color={COLORS.export} />
-          <FlowTile icon="flash" label="Direct Use" value={bill.directSolarUseKwh} unit="kWh" color={COLORS.directUse} />
+          <FlowTile
+            icon="sunny"
+            label={flowScope === 'month' ? 'Generated' : 'Total Gen'}
+            value={displayGen}
+            unit="kWh"
+            color={COLORS.generation}
+            note={flowScope === 'month' && avgPerDay ? `${avgPerDay}/day avg` : undefined}
+          />
+          <FlowTile
+            icon="arrow-down"
+            label={flowScope === 'month' ? 'Imported' : 'Total Imp'}
+            value={displayImp}
+            unit="kWh"
+            color={COLORS.import}
+          />
+          <FlowTile
+            icon="arrow-up"
+            label={flowScope === 'month' ? 'Exported' : 'Total Exp'}
+            value={displayExp}
+            unit="kWh"
+            color={COLORS.export}
+          />
+          <FlowTile
+            icon="flash"
+            label={flowScope === 'month' ? 'Direct Use' : 'Total Direct'}
+            value={displayDirect}
+            unit="kWh"
+            color={COLORS.directUse}
+          />
         </View>
-
       </Card>
 
       {/* ─── 2. Energy Bank ─── */}
-      <Card title="Energy Bank" subtitle="Cumulative net-metering credit">
+      <Card
+        title="Energy Bank"
+        subtitle={`Cumulative credit balance as of ${bill.period}`}
+        badge={<Badge label={bill.period} color={COLORS.gold} />}
+      >
         <View style={styles.bankHero}>
           <Text style={styles.bankValue}>{bill.closingCreditKwh}</Text>
           <Text style={styles.bankUnit}>kWh carried forward</Text>
@@ -139,7 +213,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </Card>
 
       {/* ─── 3. Current Bill ─── */}
-      <Card title="Current Bill" subtitle={`Bill #${bill.billNumber ?? 'N/A'}  ·  Due: ${bill.dueDate ?? 'N/A'}`} badge={<Badge label={`₹${bill.billAmount.toFixed(0)}`} color={COLORS.gold} />}>
+      <Card
+        title="Current Bill"
+        subtitle={`${bill.period} · Bill #${bill.billNumber ?? 'N/A'}  ·  Due: ${bill.dueDate ?? 'N/A'}`}
+        badge={<Badge label={`₹${bill.billAmount.toFixed(0)}`} color={COLORS.gold} />}
+      >
         <View style={styles.billBox}>
           {bill.demandCharges !== undefined && (
             <LedgerRow label="Demand / Fixed Charges" value={`₹${bill.demandCharges.toFixed(2)}`} />
@@ -323,6 +401,33 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: 11, color: COLORS.textMuted, marginBottom: 4 },
   chipValue: { fontSize: 15, fontWeight: FONT.bold },
   stripDivider: { width: 1, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
+
+  // Scope toggle
+  scopeToggle: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.surfaceRaised,
+    borderRadius: RADIUS.full,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  scopeBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+  },
+  scopeBtnActive: {
+    backgroundColor: COLORS.gold,
+  },
+  scopeBtnText: {
+    fontSize: 10,
+    fontWeight: FONT.semi,
+    color: COLORS.textMuted,
+  },
+  scopeBtnTextActive: {
+    color: COLORS.textInverse,
+    fontWeight: FONT.bold,
+  },
 
   // Flow grid
   flowGrid: {
