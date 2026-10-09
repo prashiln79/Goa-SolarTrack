@@ -19,7 +19,7 @@ interface HomeScreenProps {
   onRefresh: () => Promise<void>;
   onAddBill: () => void;
   onLogClean: () => void;
-  onSeedCanonical: () => void;
+  onSeedCanonical?: () => void;
   onNavigateCare: () => void;
   onNavigateAnalytics: () => void;
 }
@@ -32,7 +32,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const bill = bills.length > 0 ? bills[0] : null;
 
   if (!bill) {
-    return <EmptyState onAddBill={onAddBill} onSeedCanonical={onSeedCanonical} />;
+    return <EmptyState onAddBill={onAddBill} />;
   }
 
   const days = bill.billingDays || 31;
@@ -55,6 +55,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         )
       : null;
 
+  // ── All-time aggregates for the summary strip ──
+  const allTimeTotalBill = bills.reduce((sum, b) => sum + b.billAmount, 0);
+  const allTimeTotalSavings = bills.reduce((sum, b) => {
+    if (b.estimatedTotalConsumptionKwh === null) return sum;
+    const est = estimateRetailBill(b.estimatedTotalConsumptionKwh, b.billAmount, profile.capacityKw);
+    return sum + est.estimatedSavingsInr;
+  }, 0);
+  const hasSavingsData = bills.some((b) => b.estimatedTotalConsumptionKwh !== null);
+  // Period label: oldest → newest
+  const sortedBills = [...bills].sort(
+    (a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime()
+  );
+  const firstPeriod = sortedBills[0]?.period ?? bill.period;
+  const lastPeriod = sortedBills[sortedBills.length - 1]?.period ?? bill.period;
+  const allTimePeriodLabel = bills.length === 1 ? bill.period : `${firstPeriod} – ${lastPeriod}`;
+
   const careColor = careAssessment.state === 'Good' ? COLORS.success
     : careAssessment.state === 'Watch' ? COLORS.warning
     : COLORS.danger;
@@ -72,31 +88,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       }
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Top summary strip ── */}
+      {/* ── Top summary strip — All-time totals ── */}
       <View style={styles.summaryStrip}>
-        <SummaryChip label="Period" value={bill.period} />
+        <SummaryChip
+          label="Total Savings"
+          value={hasSavingsData ? `₹${Math.round(allTimeTotalSavings).toLocaleString()}` : '—'}
+          valueColor={hasSavingsData ? COLORS.success : COLORS.textMuted}
+        />
         <View style={styles.stripDivider} />
-        <SummaryChip label="Energy Bank" value={`${bill.closingCreditKwh} kWh`} valueColor={COLORS.bank} />
-        <View style={styles.stripDivider} />
-        <SummaryChip label="Net Payable" value={`₹${bill.billAmount.toFixed(0)}`} valueColor={COLORS.gold} />
+        <SummaryChip
+          label="Total Paid"
+          value={`₹${Math.round(allTimeTotalBill).toLocaleString()}`}
+          valueColor={COLORS.gold}
+        />
       </View>
 
       {/* ─── 1. Energy Flow ─── */}
-      <Card title="Energy Flow" subtitle={`${bill.period} · ${days} days`}>
+      <Card title="Energy Flow" subtitle=''>
         <View style={styles.flowGrid}>
           <FlowTile icon="sunny" label="Generated" value={bill.generationKwh} unit="kWh" color={COLORS.generation} note={avgPerDay ? `${avgPerDay}/day avg` : undefined} />
           <FlowTile icon="arrow-down" label="Imported" value={bill.importKwh} unit="kWh" color={COLORS.import} />
           <FlowTile icon="arrow-up" label="Exported" value={bill.exportKwh} unit="kWh" color={COLORS.export} />
           <FlowTile icon="flash" label="Direct Use" value={bill.directSolarUseKwh} unit="kWh" color={COLORS.directUse} />
         </View>
-        {retailEstimate && (
-          <View style={styles.savingsRow}>
-            <Ionicons name="leaf-outline" size={14} color={COLORS.success} />
-            <Text style={styles.savingsText}>
-              Estimated savings vs full retail: <Text style={{ color: COLORS.success, fontWeight: FONT.bold }}>₹{retailEstimate.estimatedSavingsInr}</Text>
-            </Text>
-          </View>
-        )}
+
       </Card>
 
       {/* ─── 2. Energy Bank ─── */}
@@ -267,22 +282,19 @@ const FormulaStep: React.FC<{
 );
 
 const EmptyState: React.FC<{
-  onAddBill: () => void; onSeedCanonical: () => void;
-}> = ({ onAddBill, onSeedCanonical }) => (
+  onAddBill: () => void;
+}> = ({ onAddBill }) => (
   <View style={styles.emptyContainer}>
     <View style={styles.emptyIconWrap}>
       <Ionicons name="sunny-outline" size={44} color={COLORS.gold} />
     </View>
     <Text style={styles.emptyTitle}>Welcome to Goa SolarTrack</Text>
     <Text style={styles.emptySub}>
-      Add your first monthly bill to begin tracking your rooftop solar production in Goa.
+      Add your first monthly electricity bill to begin tracking your rooftop solar production, savings, and energy credits in Goa.
     </Text>
     <TouchableOpacity id="btn-add-bill-empty" style={styles.emptyAddBtn} onPress={onAddBill}>
       <Ionicons name="add-circle" size={18} color={COLORS.textInverse} />
       <Text style={styles.emptyAddBtnText}>Add Monthly Bill</Text>
-    </TouchableOpacity>
-    <TouchableOpacity id="btn-seed-canonical" style={styles.emptySeedBtn} onPress={onSeedCanonical}>
-      <Text style={styles.emptySeedText}>Load sample Aug 2026 bill</Text>
     </TouchableOpacity>
   </View>
 );

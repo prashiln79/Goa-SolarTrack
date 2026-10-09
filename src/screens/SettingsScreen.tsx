@@ -19,10 +19,11 @@ interface SettingsScreenProps {
   syncStatus: SyncStatus;
   onProfileSave: (updated: SystemProfile) => Promise<void>;
   onDataRefresh: () => Promise<void>;
+  onSwitchConsumer?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
-  profile, syncStatus, onProfileSave, onDataRefresh,
+  profile, syncStatus, onProfileSave, onDataRefresh, onSwitchConsumer,
 }) => {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [isTestingConn, setIsTestingConn]     = useState(false);
@@ -107,6 +108,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       showsVerticalScrollIndicator={false}
     >
       <Text style={styles.pageTitle}>Settings</Text>
+
+      {/* ── Active Consumer Account ── */}
+      <Card
+        title="Active Consumer"
+        subtitle="EDG Electricity Account"
+        badge={
+          onSwitchConsumer ? (
+            <TouchableOpacity
+              id="btn-switch-consumer"
+              style={styles.editBtn}
+              onPress={onSwitchConsumer}
+            >
+              <Ionicons name="swap-horizontal" size={12} color={COLORS.gold} />
+              <Text style={styles.editBtnText}>Switch</Text>
+            </TouchableOpacity>
+          ) : undefined
+        }
+      >
+        <LedgerRow
+          label="Consumer Number"
+          value={profile.consumerNumber || 'Not configured'}
+          valueColor={COLORS.gold}
+        />
+        <LedgerRow label="System / Owner" value={profile.systemName} />
+      </Card>
 
       {/* ── System Profile ── */}
       <Card

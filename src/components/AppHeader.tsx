@@ -14,6 +14,7 @@ interface AppHeaderProps {
   syncStatus: SyncStatus;
   onAddBill: () => void;
   onSettingsPress: () => void;
+  onConsumerPress?: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -21,21 +22,27 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   syncStatus,
   onAddBill,
   onSettingsPress,
+  onConsumerPress,
 }) => (
   <View style={styles.container}>
     <View style={styles.topRow}>
       {/* Brand */}
-      <View style={styles.brand}>
+      <TouchableOpacity
+        id="btn-header-profile"
+        style={styles.brand}
+        onPress={onConsumerPress || onSettingsPress}
+        activeOpacity={0.7}
+      >
         <View style={styles.sunIcon}>
           <Ionicons name="sunny" size={20} color={COLORS.gold} />
         </View>
         <View>
           <Text style={styles.appName}>Goa SolarTrack</Text>
-          <Text style={styles.systemInfo}>
-            {profile.location} · {profile.capacityKw} kW
+          <Text style={styles.systemInfo} numberOfLines={1}>
+            {profile.consumerNumber ? `ID: ${profile.consumerNumber}` : profile.location} · {profile.capacityKw} kW
           </Text>
         </View>
-      </View>
+      </TouchableOpacity>
 
       {/* Actions */}
       <View style={styles.actions}>

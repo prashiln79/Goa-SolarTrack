@@ -9,6 +9,7 @@
 // ------------------------------------
 export interface SystemProfile {
   id: string;
+  consumerNumber: string;   // Unique EDG electricity consumer number
   systemName: string;
   capacityKw: number;
   location: string;         // e.g. "Panaji, North Goa"
@@ -30,6 +31,7 @@ export type BillSource = 'manual' | 'ocr_confirmed' | 'canonical_fixture';
 
 export interface SolarBill {
   id: string;
+  consumerNumber?: string;  // Unique EDG consumer ID this bill belongs to
   period: string;           // human label, e.g. "August 2026"
   periodStart: string;      // YYYY-MM-DD
   periodEnd: string;        // YYYY-MM-DD
@@ -104,6 +106,7 @@ export interface EnergyLedgerEntry {
 // ------------------------------------
 export interface CleaningEvent {
   id: string;
+  consumerNumber?: string;  // Unique EDG consumer ID
   date: string;             // YYYY-MM-DD
   notes?: string;
   provider?: string;

@@ -1,7 +1,7 @@
 // ============================================================
 // GOA SOLARTRACKER — Root Application
-// PRD §4 navigation: Home | Analytics | Care | Settings
-// (Bills accessible from header and Home screen)
+// PRD §4 navigation: Home | Bills | Analytics | Care | Settings
+// Multi-consumer isolation with unique Consumer Number onboarding
 // ============================================================
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Text,
   StatusBar as RNStatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import {
   SafeAreaProvider,
@@ -26,9 +27,10 @@ import { CareScreen }      from './src/screens/CareScreen';
 import { SettingsScreen }  from './src/screens/SettingsScreen';
 
 // ── Components ────────────────────────────────────────────────
-import { AppHeader }         from './src/components/AppHeader';
-import { AddBillModal }      from './src/components/AddBillModal';
-import { AddCleaningModal }  from './src/components/AddCleaningModal';
+import { AppHeader }               from './src/components/AppHeader';
+import { AddBillModal }            from './src/components/AddBillModal';
+import { AddCleaningModal }        from './src/components/AddCleaningModal';
+import { ConsumerOnboardingModal } from './src/components/ConsumerOnboardingModal';
 
 // ── Services & Domain ─────────────────────────────────────────
 import {
@@ -42,8 +44,11 @@ import {
   subscribeToSyncStatus,
   testFirestoreConnection,
   seedCanonicalData,
+  loadStoredConsumerNumber,
+  saveActiveConsumerNumber,
+  getActiveConsumerNumber,
+  createDefaultProfile,
   SyncStatus,
-  DEFAULT_SYSTEM_PROFILE,
 } from './src/services/solarStorage';
 import { calculateCleaningScore } from './src/domain/cleaningIntelligence';
 
@@ -82,7 +87,7 @@ const DEFAULT_CARE: CareAssessment = {
   score: 30,
   state: 'Good',
   daysSinceLastClean: 0,
-  rationale: 'Loading assessment…',
+  rationale: 'Awaiting monthly bill or wash logs…',
   recommendation: '',
   signals: {
     cleanlinessRecencySignal: 0,
@@ -96,27 +101,99 @@ const DEFAULT_CARE: CareAssessment = {
 // ── App ───────────────────────────────────────────────────────
 function MainApp() {
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab]           = useState<Tab>('home');
-  const [bills, setBills]                   = useState<SolarBill[]>([]);
-  const [cleanings, setCleanings]           = useState<CleaningEvent[]>([]);
-  const [profile, setProfile]               = useState<SystemProfile>(DEFAULT_SYSTEM_PROFILE);
-  const [careAssessment, setCareAssessment] = useState<CareAssessment>(DEFAULT_CARE);
-  const [syncStatus, setSyncStatus]         = useState<SyncStatus>({
+  const [activeTab, setActiveTab]                     = useState<Tab>('home');
+  const [consumerNumber, setConsumerNumber]           = useState<string | null>(null);
+  const [isConsumerModalOpen, setIsConsumerModalOpen] = useState(false);
+  const [isInitializing, setIsInitializing]           = useState(true);
+
+  const [bills, setBills]                             = useState<SolarBill[]>([]);
+  const [cleanings, setCleanings]                     = useState<CleaningEvent[]>([]);
+  const [profile, setProfile]                         = useState<SystemProfile>(() =>
+    createDefaultProfile('')
+  );
+  const [careAssessment, setCareAssessment]           = useState<CareAssessment>(DEFAULT_CARE);
+  const [syncStatus, setSyncStatus]                   = useState<SyncStatus>({
     isFirestoreConnected: false, lastSyncedAt: null, message: 'Connecting…',
   });
-  const [isRefreshing, setIsRefreshing]     = useState(false);
+  const [isRefreshing, setIsRefreshing]               = useState(false);
 
   // ── Modal states ──
-  const [isAddBillOpen, setIsAddBillOpen]     = useState(false);
-  const [isAddCleanOpen, setIsAddCleanOpen]   = useState(false);
+  const [isAddBillOpen, setIsAddBillOpen]             = useState(false);
+  const [isAddCleanOpen, setIsAddCleanOpen]           = useState(false);
+
+  // ── Load data for a specific consumer ──────────────────────
+  const loadAll = useCallback(async (cNum?: string) => {
+    const targetConsumer = cNum ?? consumerNumber ?? getActiveConsumerNumber();
+    if (!targetConsumer) {
+      setBills([]);
+      setCleanings([]);
+      return;
+    }
+
+    try {
+      const [fetchedBills, fetchedCleanings, fetchedProfile] = await Promise.all([
+        getBills(targetConsumer),
+        getCleaningEvents(targetConsumer),
+        getSystemProfile(targetConsumer),
+      ]);
+
+      setBills(fetchedBills);
+      setCleanings(fetchedCleanings);
+
+      if (fetchedProfile) {
+        setProfile(fetchedProfile);
+      } else {
+        const fallback = createDefaultProfile(targetConsumer);
+        setProfile(fallback);
+      }
+    } catch (err) {
+      console.error('loadAll error:', err);
+    }
+  }, [consumerNumber]);
 
   // ── Initial load ──────────────────────────────────────────
   useEffect(() => {
     const unsub = subscribeToSyncStatus(setSyncStatus);
-    loadAll();
-    testFirestoreConnection(); // background connection test
+
+    const bootstrap = async () => {
+      try {
+        const savedConsumer = await loadStoredConsumerNumber();
+        if (savedConsumer) {
+          setConsumerNumber(savedConsumer);
+          await loadAll(savedConsumer);
+        } else {
+          // No consumer configured yet: show onboarding prompt
+          setIsConsumerModalOpen(true);
+        }
+        await testFirestoreConnection();
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    bootstrap();
     return () => unsub();
-  }, []);
+  }, [loadAll]);
+
+  // ── Connect / Switch Consumer Number ───────────────────────
+  const handleConnectConsumer = async (
+    cNum: string,
+    profileDetails?: Partial<SystemProfile>
+  ) => {
+    await saveActiveConsumerNumber(cNum);
+    setConsumerNumber(cNum);
+
+    // Look up if profile already exists in Firestore or locally
+    let existing = await getSystemProfile(cNum);
+    if (!existing) {
+      existing = createDefaultProfile(cNum, profileDetails);
+      await saveSystemProfile(existing, cNum);
+    }
+    setProfile(existing);
+
+    await loadAll(cNum);
+    setIsConsumerModalOpen(false);
+  };
 
   // ── Derive care assessment whenever relevant state changes ──
   useEffect(() => {
@@ -130,7 +207,7 @@ function MainApp() {
         ? latestBill.generationKwh / (latestBill.billingDays || 31)
         : undefined;
 
-    const expectedKwhPerDay = (profile.capacityKw || 5.3) * 2.8; // ~2.8 kWh/kW/day Goa avg
+    const expectedKwhPerDay = (profile.capacityKw || 5.0) * 2.8; // ~2.8 kWh/kW/day Goa avg
 
     // Determine monsoon season (June–September)
     const month = new Date().getMonth() + 1;
@@ -146,21 +223,6 @@ function MainApp() {
     setCareAssessment(result);
   }, [bills, cleanings, profile]);
 
-  const loadAll = useCallback(async () => {
-    try {
-      const [fetchedBills, fetchedCleanings, fetchedProfile] = await Promise.all([
-        getBills(),
-        getCleaningEvents(),
-        getSystemProfile(),
-      ]);
-      setBills(fetchedBills);
-      setCleanings(fetchedCleanings);
-      setProfile(fetchedProfile);
-    } catch (err) {
-      console.error('loadAll error:', err);
-    }
-  }, []);
-
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await loadAll();
@@ -169,13 +231,15 @@ function MainApp() {
   }, [loadAll]);
 
   const handleSaveBill = async (bill: SolarBill) => {
-    await saveBill(bill);
-    await loadAll();
+    const cNum = consumerNumber || profile.consumerNumber || getActiveConsumerNumber() || 'primary';
+    await saveBill(bill, cNum);
+    await loadAll(cNum);
   };
 
   const handleDeleteBill = async (id: string) => {
-    await deleteBill(id);
-    await loadAll();
+    const cNum = consumerNumber || profile.consumerNumber || getActiveConsumerNumber() || 'primary';
+    await deleteBill(id, cNum);
+    await loadAll(cNum);
   };
 
   const handleSaveCleaning = async (event: CleaningEvent) => {
@@ -193,9 +257,20 @@ function MainApp() {
     await loadAll();
   };
 
-  // Android safe-area insets (status bar top + nav bar bottom)
+  // Safe-area insets
   const topInset = Math.max(insets.top, RNStatusBar.currentHeight ?? 0);
   const bottomInset = Math.max(insets.bottom, 16);
+
+  if (isInitializing) {
+    return (
+      <View style={[styles.rootContainer, styles.center]}>
+        <ActivityIndicator size="large" color={COLORS.gold} />
+        <Text style={{ marginTop: SPACING.md, color: COLORS.textSub, fontSize: 14 }}>
+          Initializing Goa SolarTrack…
+        </Text>
+      </View>
+    );
+  }
 
   // ── Render ────────────────────────────────────────────────
   return (
@@ -208,6 +283,7 @@ function MainApp() {
         syncStatus={syncStatus}
         onAddBill={() => setIsAddBillOpen(true)}
         onSettingsPress={() => setActiveTab('settings')}
+        onConsumerPress={() => setIsConsumerModalOpen(true)}
       />
 
       {/* Main content */}
@@ -254,11 +330,12 @@ function MainApp() {
             syncStatus={syncStatus}
             onProfileSave={handleSaveProfile}
             onDataRefresh={loadAll}
+            onSwitchConsumer={() => setIsConsumerModalOpen(true)}
           />
         )}
       </View>
 
-      {/* Bottom Navigation — PRD §4.2 */}
+      {/* Bottom Navigation */}
       <View
         style={[
           styles.tabBar,
@@ -298,11 +375,19 @@ function MainApp() {
         onClose={() => setIsAddBillOpen(false)}
         onSave={handleSaveBill}
         latestBill={bills.length > 0 ? bills[0] : null}
+        profile={profile}
       />
       <AddCleaningModal
         visible={isAddCleanOpen}
         onClose={() => setIsAddCleanOpen(false)}
         onSave={handleSaveCleaning}
+      />
+      <ConsumerOnboardingModal
+        visible={isConsumerModalOpen}
+        canCancel={Boolean(consumerNumber)}
+        currentConsumerNumber={consumerNumber}
+        onClose={() => setIsConsumerModalOpen(false)}
+        onConnect={handleConnectConsumer}
       />
     </View>
   );
@@ -321,6 +406,10 @@ const styles = StyleSheet.create({
   rootContainer: {
     flex: 1,
     backgroundColor: COLORS.surface,
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   screenContainer: {
     flex: 1,

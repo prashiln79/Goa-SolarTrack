@@ -4,7 +4,7 @@
 // ============================================================
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SolarBill } from '../types/solar';
@@ -27,15 +27,32 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
   const toggle = (id: string) =>
     setExpandedId((prev) => (prev === id ? null : id));
 
-  const confirmDelete = (bill: SolarBill) =>
+  const confirmDelete = (bill: SolarBill) => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`Remove the record for ${bill.period}? This cannot be undone.`)) {
+        onDeleteBill(bill.id);
+      }
+      return;
+    }
     Alert.alert(
       'Delete Bill',
       `Remove the record for ${bill.period}? This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => onDeleteBill(bill.id) },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await onDeleteBill(bill.id);
+            } catch (err: any) {
+              Alert.alert('Delete Failed', err?.message ?? 'Could not delete bill.');
+            }
+          },
+        },
       ]
     );
+  };
 
   return (
     <ScrollView
@@ -50,10 +67,10 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
             {bills.length} billing cycle{bills.length === 1 ? '' : 's'} recorded
           </Text>
         </View>
-        <TouchableOpacity id="btn-add-bill-bills" style={styles.addBtn} onPress={onAddBill}>
+        {/* <TouchableOpacity id="btn-add-bill-bills" style={styles.addBtn} onPress={onAddBill}>
           <Ionicons name="add" size={16} color={COLORS.textInverse} />
           <Text style={styles.addBtnText}>New Bill</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </View>
 
       {bills.length === 0 && (
