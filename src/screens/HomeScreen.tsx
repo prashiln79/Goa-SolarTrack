@@ -6,8 +6,9 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import { SolarBill, SystemProfile, CareAssessment } from '../types/solar';
-import { Card, Badge, Divider, InfoNote, ProgressBar, LedgerRow } from '../components/ui/UIKit';
+import { Card, Badge, Divider, InfoNote, ProgressBar, LedgerRow, SolarPanelIcon, GridIcon } from '../components/ui/UIKit';
 import { estimateRetailBill, projectSettlement } from '../domain/tariffEngine';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
 
@@ -57,6 +58,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   // ── Scope toggle for Energy Flow (Latest Month vs All Bills) ──
   const [flowScope, setFlowScope] = useState<'month' | 'all'>('month');
+  const [connectorWidth, setConnectorWidth] = useState(330);
+  const [homeCardLayout, setHomeCardLayout] = useState({ width: 155, height: 140 });
 
   // ── All-time aggregates for the summary strip & all-time flow ──
   const allTimeGeneration = bills.reduce((sum, b) => sum + (b.generationKwh ?? 0), 0);
@@ -68,6 +71,77 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const displayImp = flowScope === 'month' ? bill.importKwh : allTimeImport;
   const displayExp = flowScope === 'month' ? bill.exportKwh : allTimeExport;
   const displayDirect = flowScope === 'month' ? bill.directSolarUseKwh : allTimeDirectUse;
+
+  // ── Derived home consumption & grid balance for visual flow diagram ──
+  const displayHomeConsumption =
+    flowScope === 'month'
+      ? (bill.estimatedTotalConsumptionKwh ?? ((displayDirect ?? 0) + displayImp))
+      : (allTimeDirectUse + allTimeImport);
+
+  const isNetImport = displayImp >= displayExp;
+  const netGridValue = Math.abs(displayExp - displayImp);
+
+  const solarGenSafe = displayGen ?? 0;
+  const directSafe = displayDirect !== null && displayDirect !== undefined
+    ? displayDirect
+    : (solarGenSafe > 0 ? Math.max(0, solarGenSafe - displayExp) : 0);
+  const solarToHomePct = solarGenSafe > 0
+    ? Math.min(100, Math.max(0, Math.round((directSafe / solarGenSafe) * 100)))
+    : 0;
+  const solarToGridPct = solarGenSafe > 0 ? Math.max(0, 100 - solarToHomePct) : 0;
+  const exportDays = flowScope === 'month' ? (bill.billingDays || 31) : Math.max(1, bills.reduce((s, b) => s + (b.billingDays || 31), 0));
+  const exportAvgPerDay = ((displayExp ?? 0) / exportDays).toFixed(1);
+
+  // Straight orthogonal connector SVG paths
+  const cx = connectorWidth / 2;
+  const leftTargetX = connectorWidth * 0.25;
+  const rightTargetX = connectorWidth * 0.75;
+  const splitY = 26;
+  const arrowTipY = 48;
+  const leftPath = `M ${cx} 0 L ${cx} ${splitY} L ${leftTargetX} ${splitY} L ${leftTargetX} ${arrowTipY}`;
+  const leftArrow = `M ${leftTargetX - 4} ${arrowTipY - 6} L ${leftTargetX} ${arrowTipY} L ${leftTargetX + 4} ${arrowTipY - 6}`;
+  const rightPath = `M ${cx} 0 L ${cx} ${splitY} L ${rightTargetX} ${splitY} L ${rightTargetX} ${arrowTipY}`;
+  const rightArrow = `M ${rightTargetX - 4} ${arrowTipY - 6} L ${rightTargetX} ${arrowTipY} L ${rightTargetX + 4} ${arrowTipY - 6}`;
+
+  // Bottom Grid -> Home import connector paths
+  const importLineY = 18;
+  const importPath = `M ${rightTargetX} 0 L ${rightTargetX} ${importLineY} L ${leftTargetX} ${importLineY} L ${leftTargetX} 6`;
+  const importArrow = `M ${leftTargetX - 4} 12 L ${leftTargetX} 5 L ${leftTargetX + 4} 12`;
+
+  // Home card house silhouette SVG path (matching reference image)
+  const hw = homeCardLayout.width || 155;
+  const hh = homeCardLayout.height || 160;
+  const hcx = hw / 2;
+  const wallInset = 14;
+  const roofEaveY = Math.round(hh * 0.36);
+  const cr = 14;
+  const slopeWidth = hw - 3 - hcx;
+  const slopeHeight = roofEaveY - 4;
+  // Chimney on right slope: positioned proportionally matching reference icon
+  const chX1 = Math.round(hcx + slopeWidth * 0.32);
+  const chWidth = Math.max(14, Math.round(slopeWidth * 0.20));
+  const chX2 = Math.min(hw - wallInset - 2, chX1 + chWidth);
+  const chY1 = Math.round(4 + ((chX1 - hcx) / slopeWidth) * slopeHeight);
+  const chY2 = Math.round(4 + ((chX2 - hcx) / slopeWidth) * slopeHeight);
+  // Chimney flat top slightly below apex (apex at y=4)
+  const chTop = Math.max(8, Math.round(4 + slopeHeight * 0.14));
+
+  const housePath = [
+    `M ${hcx} 4`,
+    `L ${chX1} ${chY1}`,
+    `L ${chX1} ${chTop}`,
+    `L ${chX2} ${chTop}`,
+    `L ${chX2} ${chY2}`,
+    `L ${hw - 3} ${roofEaveY}`,
+    `L ${hw - wallInset} ${roofEaveY}`,
+    `L ${hw - wallInset} ${hh - cr}`,
+    `Q ${hw - wallInset} ${hh - 3} ${hw - wallInset - cr} ${hh - 3}`,
+    `L ${wallInset + cr} ${hh - 3}`,
+    `Q ${wallInset} ${hh - 3} ${wallInset} ${hh - cr}`,
+    `L ${wallInset} ${roofEaveY}`,
+    `L 3 ${roofEaveY}`,
+    'Z',
+  ].join(' ');
 
   const allTimeTotalBill = bills.reduce((sum, b) => sum + b.billAmount, 0);
   const allTimeTotalSavings = bills.reduce((sum, b) => {
@@ -116,9 +190,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         />
       </View>
 
-      {/* ─── 1. Energy Flow ─── */}
+      {/* ─── 1. Energy Overview (3 Simple Questions for Normal Person) ─── */}
       <Card
-        title="Energy Flow"
+        title="Energy Overview"
         subtitle={
           flowScope === 'month'
             ? `${bill.period} (Latest Bill)`
@@ -151,36 +225,209 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           )
         }
       >
-        <View style={styles.flowGrid}>
-          <FlowTile
-            icon="sunny"
-            label={flowScope === 'month' ? 'Generated' : 'Total Gen'}
-            value={displayGen}
-            unit="kWh"
-            color={COLORS.generation}
-            note={flowScope === 'month' && avgPerDay ? `${avgPerDay}/day avg` : undefined}
-          />
-          <FlowTile
-            icon="arrow-down"
-            label={flowScope === 'month' ? 'Imported' : 'Total Imp'}
-            value={displayImp}
-            unit="kWh"
-            color={COLORS.import}
-          />
-          <FlowTile
-            icon="arrow-up"
-            label={flowScope === 'month' ? 'Exported' : 'Total Exp'}
-            value={displayExp}
-            unit="kWh"
-            color={COLORS.export}
-          />
-          <FlowTile
-            icon="flash"
-            label={flowScope === 'month' ? 'Direct Use' : 'Total Direct'}
-            value={displayDirect}
-            unit="kWh"
-            color={COLORS.directUse}
-          />
+        <View style={styles.flowchartWrap}>
+          {/* ─── 1. TOP NODE: SOLAR GENERATED ─── */}
+          <View style={styles.fcSolarCard}>
+            {/* Left: Sun Icon circle badge */}
+            <View style={styles.fcSolarIconBadge}>
+              <Ionicons name="sunny" size={34} color="#F59E0B" />
+            </View>
+
+            {/* Right: Data Column */}
+            <View style={styles.fcSolarDataCol}>
+              <Text style={styles.fcSolarHeaderLabel}>SOLAR GENERATED</Text>
+              <View style={styles.fcSolarValueRow}>
+                <Text style={styles.fcSolarHeroNum}>{displayGen ?? '—'}</Text>
+                <Text style={styles.fcSolarHeroUnit}>kWh</Text>
+              </View>
+              <View style={styles.fcSolarAvgRow}>
+                <Ionicons name="stats-chart" size={12} color="#F59E0B" />
+                <Text style={styles.fcSolarAvgText}>
+                  {flowScope === 'month' && avgPerDay
+                    ? `${avgPerDay} kWh/day avg`
+                    : `${((displayGen ?? 0) / Math.max(1, bills.length * 30)).toFixed(1)} kWh/day avg`}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* ─── 2. SPLIT STEM & STRAIGHT FLOW ARROWS ─── */}
+          <View
+            style={styles.fcConnectorContainer}
+            onLayout={(e) => {
+              const w = Math.round(e.nativeEvent.layout.width);
+              if (w > 0 && Math.abs(w - connectorWidth) > 2) {
+                setConnectorWidth(w);
+              }
+            }}
+          >
+            <Svg width={connectorWidth} height={54} style={StyleSheet.absoluteFill}>
+              {/* Left flow (Purple): Straight stem -> horizontal split -> drop */}
+              <Path
+                d={leftPath}
+                stroke="#8B5CF6"
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <Path
+                d={leftArrow}
+                stroke="#8B5CF6"
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {/* Right flow (Green): Straight stem -> horizontal split -> drop */}
+              <Path
+                d={rightPath}
+                stroke="#10B981"
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <Path
+                d={rightArrow}
+                stroke="#10B981"
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+
+            {/* Percentage Badges */}
+            <View style={[styles.fcPillBadgeLeft, { left: Math.round(connectorWidth * 0.375 - 18) }]}>
+              <Text style={styles.fcPillTextLeft}>{solarToHomePct}%</Text>
+            </View>
+            <View style={[styles.fcPillBadgeRight, { left: Math.round(connectorWidth * 0.625 - 18) }]}>
+              <Text style={styles.fcPillTextRight}>{solarToGridPct}%</Text>
+            </View>
+          </View>
+
+          {/* ─── 3. MIDDLE ROW: HOME USED & GOA GRID ─── */}
+          <View style={styles.fcMiddleRow}>
+            {/* Left Card: Home Used (House Shape) */}
+            <View
+              style={styles.fcHomeCard}
+              onLayout={(e) => {
+                const { width, height } = e.nativeEvent.layout;
+                if (
+                  width > 0 &&
+                  height > 0 &&
+                  (Math.abs(width - homeCardLayout.width) > 2 ||
+                    Math.abs(height - homeCardLayout.height) > 2)
+                ) {
+                  setHomeCardLayout({
+                    width: Math.round(width),
+                    height: Math.round(height),
+                  });
+                }
+              }}
+            >
+              <Svg
+                width={hw}
+                height={hh}
+                style={StyleSheet.absoluteFill}
+              >
+                <Path
+                  d={housePath}
+                  fill="#FAF5FF"
+                  stroke="#7C3AED"
+                  strokeWidth={2.5}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              </Svg>
+
+              <View style={styles.fcHomeHeroCenter}>
+                <Text style={styles.fcHeroValue}>
+                  {displayHomeConsumption.toFixed(0)}
+                  <Text style={styles.fcHeroUnit}> kWh</Text>
+                </Text>
+              </View>
+
+              <View style={styles.fcHomeFloorCard}>
+                <View style={styles.fcBreakdownItem}>
+                  <Ionicons name="sunny" size={13} color="#F59E0B" />
+                  <Text style={styles.fcBreakdownLabel} numberOfLines={1}>From Solar</Text>
+                  <Text style={styles.fcBreakdownValSolar} numberOfLines={1}>{displayDirect ?? 0} kWh</Text>
+                </View>
+                <View style={styles.fcFloorDivider} />
+                <View style={styles.fcBreakdownItem}>
+                  <Ionicons name="flash" size={13} color="#3B82F6" />
+                  <Text style={styles.fcBreakdownLabel} numberOfLines={1}>From Grid</Text>
+                  <Text style={styles.fcBreakdownValGrid} numberOfLines={1}>{displayImp} kWh</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Right Card: Goa Grid */}
+            <View style={styles.fcGridCard}>
+              <View style={styles.fcNodeHeader}>
+                <View style={styles.fcGridIconWrap}>
+                  <GridIcon size={18} color="#059669" />
+                </View>
+                <Text style={styles.fcCardTitleText}>Grid</Text>
+               
+              </View>
+
+              <View style={styles.fcHeroValueRow}>
+                <Text style={styles.fcHeroValue}>
+                  {displayExp}
+                  <Text style={styles.fcHeroUnit}> kWh</Text>
+                </Text>
+              </View>
+
+              <View style={styles.fcGridFloorCard}>
+                <View style={styles.fcBreakdownItem}>
+                  <Ionicons name="pie-chart" size={12} color="#059669" />
+                  <Text style={styles.fcBreakdownLabel} numberOfLines={1}>Solar Share</Text>
+                  <Text style={styles.fcBreakdownValExport} numberOfLines={1}>{solarToGridPct}%</Text>
+                </View>
+                <View style={styles.fcGridFloorDivider} />
+                <View style={styles.fcBreakdownItem}>
+                  <Ionicons name="stats-chart" size={12} color="#10B981" />
+                  <Text style={styles.fcBreakdownLabel} numberOfLines={1}>Daily Avg</Text>
+                  <Text style={styles.fcBreakdownValExport} numberOfLines={1}>{exportAvgPerDay} kWh</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* ─── 4. BOTTOM CONNECTOR: GRID → HOME IMPORT PATH ─── */}
+          <View style={styles.fcImportConnector}>
+            <Svg width={connectorWidth} height={36} style={StyleSheet.absoluteFill}>
+              <Path
+                d={importPath}
+                stroke="#2563EB"
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <Path
+                d={importArrow}
+                stroke="#2563EB"
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+
+            {/* In-between Imported Value Pill Badge */}
+            <View style={styles.fcImportPillWrap}>
+              <View style={styles.fcImportPill}>
+                <Text style={styles.fcImportPillText}>
+                  Imported:{' '}
+                  <Text style={styles.fcImportPillVal}>{displayImp} kWh</Text>
+                </Text>
+              </View>
+            </View>
+          </View>
         </View>
       </Card>
 
@@ -427,6 +674,309 @@ const styles = StyleSheet.create({
   scopeBtnTextActive: {
     color: COLORS.textInverse,
     fontWeight: FONT.bold,
+  },
+
+  // Flowchart
+  flowchartWrap: {
+    width: '100%',
+    marginTop: 2,
+  },
+
+  // 1. Solar Generated Card
+  fcSolarCard: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    ...SHADOW.card,
+  },
+  fcSolarIconBadge: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fcSolarDataCol: {
+    flex: 1,
+    marginLeft: 16,
+    justifyContent: 'center',
+  },
+  fcSolarHeaderLabel: {
+    fontSize: 12,
+    fontWeight: FONT.bold,
+    color: '#64748B',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  fcSolarValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: 1,
+  },
+  fcSolarHeroNum: {
+    fontSize: 34,
+    fontWeight: FONT.heavy,
+    color: '#0F172A',
+    letterSpacing: -0.5,
+  },
+  fcSolarHeroUnit: {
+    fontSize: 16,
+    fontWeight: FONT.semi,
+    color: '#64748B',
+    marginLeft: 5,
+  },
+  fcSolarAvgRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  fcSolarAvgText: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: '#D97706',
+  },
+
+  // 2. Connector & Flow Arrows
+  fcConnectorContainer: {
+    width: '100%',
+    height: 54,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  fcPillBadgeLeft: {
+    position: 'absolute',
+    top: 15,
+    backgroundColor: '#F3E8FF',
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fcPillTextLeft: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+    color: '#7C3AED',
+  },
+  fcPillBadgeRight: {
+    position: 'absolute',
+    top: 15,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fcPillTextRight: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+    color: '#059669',
+  },
+
+  // 3. Middle Row
+  fcMiddleRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 10,
+  },
+  fcHomeCard: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    paddingTop: 42,
+    minHeight: 160,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  fcHomeHeroCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: 2,
+  },
+  fcHomeFloorCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    gap: 4,
+  },
+  fcFloorDivider: {
+    height: 1,
+    backgroundColor: '#F3E8FF',
+  },
+  fcGridCard: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+    padding: 12,
+    minHeight: 160,
+    justifyContent: 'space-between',
+  },
+  fcNodeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  fcHomeIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fcGridIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fcCardTitleText: {
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: '#0F172A',
+    flexShrink: 1,
+  },
+  fcHeroValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 10,
+  },
+  fcHeroValue: {
+    fontSize: 26,
+    fontWeight: FONT.heavy,
+    color: '#0F172A',
+    letterSpacing: -0.5,
+  },
+  fcHeroUnit: {
+    fontSize: 14,
+    fontWeight: FONT.semi,
+    color: '#64748B',
+    marginLeft: 4,
+  },
+  fcBreakdownList: {
+    gap: 6,
+  },
+  fcBreakdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  fcBreakdownLabel: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: FONT.medium,
+    flex: 1,
+    marginLeft: 5,
+  },
+  fcBreakdownValSolar: {
+    fontSize: 12,
+    fontWeight: FONT.bold,
+    color: '#7C3AED',
+  },
+  fcBreakdownValGrid: {
+    fontSize: 12,
+    fontWeight: FONT.bold,
+    color: '#2563EB',
+  },
+  fcBreakdownValExport: {
+    fontSize: 12,
+    fontWeight: FONT.bold,
+    color: '#059669',
+  },
+
+  fcGridBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 'auto',
+  },
+  fcGridBadgeText: {
+    fontSize: 10,
+    fontWeight: FONT.bold,
+    color: '#059669',
+  },
+  fcGridFloorCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    gap: 4,
+  },
+  fcGridFloorDivider: {
+    height: 1,
+    backgroundColor: '#F0FDF4',
+  },
+
+  // Bottom Grid -> Home Import Connector
+  fcImportConnector: {
+    width: '100%',
+    height: 36,
+    position: 'relative',
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  fcImportPillWrap: {
+    position: 'absolute',
+    top: 7,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fcImportPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 2.5,
+  },
+  fcImportPillText: {
+    fontSize: 11,
+    color: '#1E40AF',
+    fontWeight: FONT.medium,
+  },
+  fcImportPillVal: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+    color: '#2563EB',
   },
 
   // Flow grid

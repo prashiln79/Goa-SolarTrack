@@ -261,3 +261,6 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 });
+
+export { SolarPanelIcon } from './SolarPanelIcon';
+export { GridIcon } from './GridIcon';
