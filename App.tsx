@@ -314,6 +314,7 @@ function MainApp() {
             bills={bills}
             profile={profile}
             cleaningEventCount={cleanings.length}
+            onProfileSave={handleSaveProfile}
           />
         )}
         {activeTab === 'care' && (

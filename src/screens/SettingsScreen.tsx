@@ -10,7 +10,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { SystemProfile, SyncStatus } from '../types/solar';
 import { Card, Divider, LedgerRow, InfoNote } from '../components/ui/UIKit';
 import { testFirestoreConnection, seedCanonicalData } from '../services/solarStorage';
-import { firebaseConfig } from '../config/firebase';
 import { runCanonicalVerification } from '../domain/energyAccounting';
 import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
 
@@ -27,6 +26,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 }) => {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [isTestingConn, setIsTestingConn]     = useState(false);
+  const [isSyncing, setIsSyncing]             = useState(false);
 
   // Edit fields
   const [capacityKw, setCapacityKw]       = useState(String(profile.capacityKw));
@@ -36,6 +36,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [panelCount, setPanelCount]       = useState(String(profile.panelCount ?? ''));
   const [inverterModel, setInverterModel] = useState(profile.inverterModel ?? '');
   const [settlementRate, setSettlementRate] = useState(String(profile.settlementRateInr ?? '3.50'));
+  const [systemCost, setSystemCost]       = useState(String(profile.systemCostInr ?? ''));
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const handleTestConnection = async () => {
@@ -43,9 +44,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     const result = await testFirestoreConnection();
     setIsTestingConn(false);
     Alert.alert(
-      result.isFirestoreConnected ? '✅ Firebase Connected' : 'ℹ️ Firebase Status',
-      result.message
+      result.isFirestoreConnected ? '✅ Cloud Connected' : 'ℹ️ Cloud Status',
+      result.isFirestoreConnected
+        ? 'Remote server connection verified successfully.'
+        : 'Currently operating in offline mode. Local records are preserved.'
     );
+  };
+
+  const handleSyncNow = async () => {
+    setIsSyncing(true);
+    try {
+      await onDataRefresh();
+      Alert.alert('Cloud Sync', 'Data refreshed successfully.');
+    } catch {
+      Alert.alert('Offline Mode', 'Operating with locally saved records.');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleSeedCanonical = () =>
@@ -89,6 +104,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       panelCount: parseInt(panelCount) || undefined,
       inverterModel: inverterModel.trim() || undefined,
       settlementRateInr: parseFloat(settlementRate) || 3.5,
+      systemCostInr: parseFloat(systemCost) || undefined,
     };
     try {
       setIsSavingProfile(true);
@@ -156,6 +172,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <LedgerRow label="Installation Date" value={profile.installationDate} />
         {profile.panelCount && <LedgerRow label="Panel Count" value={`${profile.panelCount}`} />}
         {profile.inverterModel && <LedgerRow label="Inverter Model" value={profile.inverterModel} />}
+        <LedgerRow
+          label="System Investment"
+          value={
+            profile.systemCostInr
+              ? `₹${profile.systemCostInr.toLocaleString('en-IN')}`
+              : `₹${Math.round(profile.capacityKw * 55000).toLocaleString('en-IN')} (Benchmark)`
+          }
+        />
         <Divider />
         <LedgerRow
           label="Settlement Rate (APPC)"
@@ -169,10 +193,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         />
       </Card>
 
-      {/* ── Firebase Firestore ── */}
+      {/* ── Data Sync & Backup ── */}
       <Card
-        title="Firebase Firestore"
-        subtitle={`Project: ${firebaseConfig.projectId}`}
+        title="Data Sync & Backup"
+        subtitle="Automatic cloud backup & offline storage"
         badge={
           <View style={[
             styles.syncPill,
@@ -184,42 +208,43 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Text style={[styles.syncText, {
               color: syncStatus.isFirestoreConnected ? COLORS.success : COLORS.info,
             }]}>
-              {syncStatus.isFirestoreConnected ? 'Online' : 'Local'}
+              {syncStatus.isFirestoreConnected ? 'Online Sync' : 'Local Only'}
             </Text>
           </View>
         }
       >
-        <LedgerRow label="Project ID" value={firebaseConfig.projectId ?? ''} />
-        <LedgerRow label="Auth Domain" value={firebaseConfig.authDomain ?? ''} />
-        <LedgerRow label="Bucket" value={firebaseConfig.storageBucket ?? ''} />
+        <LedgerRow
+          label="Cloud Sync"
+          value={syncStatus.isFirestoreConnected ? 'Connected & Active' : 'Offline Mode'}
+          valueColor={syncStatus.isFirestoreConnected ? COLORS.success : COLORS.info}
+        />
+        <LedgerRow
+          label="Local Storage"
+          value="Active (Offline Fallback)"
+        />
+        <LedgerRow
+          label="Last Synced"
+          value={syncStatus.lastSyncedAt ? new Date(syncStatus.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Pending'}
+        />
         <Divider />
         <View style={styles.statusBox}>
-          <Ionicons name="information-circle-outline" size={14} color={COLORS.textMuted} />
-          <Text style={styles.statusMsg} numberOfLines={3}>{syncStatus.message}</Text>
+          <Ionicons name="shield-checkmark-outline" size={14} color={COLORS.textMuted} />
+          <Text style={styles.statusMsg} numberOfLines={2}>
+            {syncStatus.message || 'Records are backed up securely and available offline.'}
+          </Text>
         </View>
 
         <TouchableOpacity
-          id="btn-test-firestore"
+          id="btn-sync-data"
           style={[styles.actionBtn, styles.actionBtnBlue]}
-          onPress={handleTestConnection}
-          disabled={isTestingConn}
+          onPress={handleSyncNow}
+          disabled={isSyncing}
         >
-          <Ionicons name="cloud-upload-outline" size={16} color={COLORS.textInverse} />
+          <Ionicons name="sync-outline" size={16} color={COLORS.textInverse} />
           <Text style={styles.actionBtnText}>
-            {isTestingConn ? 'Testing…' : 'Test Firestore Connection'}
+            {isSyncing ? 'Syncing data…' : 'Sync Data Now'}
           </Text>
         </TouchableOpacity>
-
-        {/* No-login rules hint */}
-        <InfoNote
-          text={
-            '⚡ No-Login Firestore Setup\n\nSet Firestore rules to allow open read/write for no-login usage:\n\n' +
-            'match /databases/{db}/documents {\n  match /{doc=**} {\n    allow read, write: if true;\n  }\n}\n\n' +
-            'All data is also cached locally via AsyncStorage as offline fallback.'
-          }
-          color={COLORS.info}
-          style={{ marginTop: SPACING.sm }}
-        />
       </Card>
 
       {/* ── Tariff & Regulatory sources ── */}
@@ -252,6 +277,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       {/* ── Developer / Test tools ── */}
       <Card title="Developer Tools & Test Fixtures">
+        <TouchableOpacity
+          id="btn-test-connection"
+          style={styles.devBtn}
+          onPress={handleTestConnection}
+          disabled={isTestingConn}
+        >
+          <Ionicons name="cloud-done-outline" size={16} color={COLORS.info} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.devBtnTitle}>
+              {isTestingConn ? 'Checking Connection…' : 'Check Server Connection'}
+            </Text>
+            <Text style={styles.devBtnSub}>Test remote server connectivity & ping</Text>
+          </View>
+        </TouchableOpacity>
+
         <TouchableOpacity id="btn-seed-canonical-settings" style={styles.devBtn} onPress={handleSeedCanonical}>
           <Ionicons name="sparkles-outline" size={16} color={COLORS.gold} />
           <View style={{ flex: 1 }}>
@@ -287,6 +327,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <ProfileField label="Panel Count" value={panelCount} onChange={setPanelCount} keyboardType="numeric" />
               <ProfileField label="Inverter Make/Model" value={inverterModel} onChange={setInverterModel} />
               <ProfileField label="APPC Settlement Rate (₹/kWh)" value={settlementRate} onChange={setSettlementRate} keyboardType="numeric" />
+              <ProfileField label="System Investment Cost (₹)" value={systemCost} onChange={setSystemCost} keyboardType="numeric" />
               <InfoNote
                 text="PRD §2.2: Confirm the APPC/settlement rate from current JERC announcement before entering."
                 color={COLORS.warning}

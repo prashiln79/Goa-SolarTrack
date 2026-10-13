@@ -22,6 +22,7 @@ export interface SystemProfile {
   lastCleanedDate?: string; // YYYY-MM-DD
   settlementRateInr?: number; // APPC benchmark ₹/kWh
   settlementPolicyId?: string;
+  systemCostInr?: number;     // Total system installation / capital cost (₹)
 }
 
 // ------------------------------------
@@ -224,4 +225,20 @@ export interface AnnualAnalytics {
   estimatedAvoidedCostInr: number;
   closingCreditKwh: number; // current bank balance
   cleaningEventCount: number;
+}
+
+export interface PaybackAnalysis {
+  systemCostInr: number;
+  isBenchmarkCost: boolean;
+  monthlyAverageSavingsInr: number;
+  annualProjectedSavingsInr: number;
+  recoveredSoFarInr: number;
+  recoveryPct: number;
+  remainingInr: number;
+  paybackYearsTotal: number;
+  remainingMonths: number;
+  breakEvenDate: string;           // e.g. "March 2030"
+  isFullyRecovered: boolean;
+  yearsRemainingFormatted: string; // e.g. "2 yrs 4 mos" or "Fully Recovered"
+  estimated25YearNetProfitInr: number;
 }

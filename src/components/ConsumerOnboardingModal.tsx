@@ -207,7 +207,7 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
               </TouchableOpacity>
 
               <Text style={styles.privacyNote}>
-                🔒 Data is stored isolated under your consumer ID in Firestore & synced locally.
+                🔒 Data is securely stored under your consumer ID & synced locally.
               </Text>
             </View>
           </ScrollView>

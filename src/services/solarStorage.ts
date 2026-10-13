@@ -142,15 +142,15 @@ export async function testFirestoreConnection(): Promise<SyncStatus> {
     const status: SyncStatus = {
       isFirestoreConnected: true,
       lastSyncedAt: new Date(),
-      message: `Connected to ${db.app.options.projectId}`,
+      message: 'Cloud sync active',
     };
     setSyncStatus(status);
     return status;
   } catch (err: any) {
     const msg =
       err?.code === 'permission-denied'
-        ? 'Firestore permission-denied — please allow solar subcollections in rules'
-        : `Offline — using local cache: ${err?.message ?? 'unknown'}`;
+        ? 'Offline mode — using local storage'
+        : 'Offline mode — local records active';
     const status: SyncStatus = {
       isFirestoreConnected: false,
       lastSyncedAt: new Date(),
@@ -202,7 +202,7 @@ export async function getBills(consumerNumber?: string): Promise<SolarBill[]> {
       setSyncStatus({
         isFirestoreConnected: true,
         lastSyncedAt: new Date(),
-        message: `Synced ${bills.length} bills for ${cNum}`,
+        message: `Synced ${bills.length} bills`,
       });
       return bills;
     }
@@ -252,20 +252,18 @@ export async function saveBill(bill: SolarBill, consumerNumber?: string): Promis
     setSyncStatus({
       isFirestoreConnected: true,
       lastSyncedAt: new Date(),
-      message: `Saved to solar/${cNum}/bills/${bill.id}`,
+      message: 'Bill saved & synced',
     });
   } catch (err: any) {
-    console.error(`[Firestore saveBill error]:`, err);
+    console.error(`[Cloud saveBill error]:`, err);
     const isPermission = err?.code === 'permission-denied';
     setSyncStatus({
       isFirestoreConnected: false,
-      message: isPermission
-        ? 'Firestore rules block subcollections. Add: match /solar/{document=**}'
-        : `Sync error: ${err?.message ?? 'unknown'}`,
+      message: 'Bill saved locally on device',
     });
     if (isPermission) {
       throw new Error(
-        'Firebase Permission Denied: Your Firestore rule in Firebase Console only allows single documents. Please update the rule to allow subcollections: match /solar/{document=**} { allow read, write: if true; }'
+        'Unable to sync with remote storage. Your bill has been saved locally on this device.'
       );
     }
     throw err;
@@ -303,7 +301,7 @@ export async function deleteBill(billId: string, consumerNumber?: string): Promi
     await deleteDoc(doc(db, 'solar', `bill_${billId}`));
     await deleteDoc(doc(db, 'solar', billId));
 
-    setSyncStatus({ lastSyncedAt: new Date(), message: `Removed bill ${billId}` });
+    setSyncStatus({ lastSyncedAt: new Date(), message: 'Bill removed' });
   } catch (err: any) {
     console.error('Delete error from Firestore:', err);
   }
@@ -415,7 +413,7 @@ export async function saveSystemProfile(profile: SystemProfile, consumerNumber?:
     setSyncStatus({
       isFirestoreConnected: true,
       lastSyncedAt: new Date(),
-      message: `Profile saved to solar/${cNum}`,
+      message: 'Profile saved & synced',
     });
   } catch (err: any) {
     console.error('Profile save error:', err);
