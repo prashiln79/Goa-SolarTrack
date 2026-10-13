@@ -184,7 +184,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       setIsParsingPdf(true);
 
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf'],
+        type: ['application/pdf', 'application/x-pdf', '*/*'],
         copyToCacheDirectory: true,
       });
 
@@ -194,24 +194,51 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       }
 
       const asset = result.assets[0];
+
+      // Validate that selected file is indeed a PDF
+      const isPdf =
+        asset.name.toLowerCase().endsWith('.pdf') ||
+        (asset.mimeType && asset.mimeType.toLowerCase().includes('pdf'));
+
+      if (!isPdf) {
+        Alert.alert(
+          'PDF Required',
+          'The selected file does not appear to be a PDF (.pdf). Please select your Goa electricity bill PDF.'
+        );
+        setIsParsingPdf(false);
+        return;
+      }
+
       setAttachedPdf({ name: asset.name, size: asset.size, uri: asset.uri });
       setPdfStatus({ type: 'info', text: `Reading ${asset.name}…` });
 
-      // Read the raw PDF bytes — use FileSystem on native (avoids fetch URI failure),
-      // fall back to fetch on web where FileSystem is unavailable.
+      // Read raw PDF bytes — try UTF-8 first, fallback to Base64 decoding or fetch
       let rawText = '';
       try {
         if (Platform.OS !== 'web' && FileSystem.readAsStringAsync) {
-          rawText = await FileSystem.readAsStringAsync(asset.uri, {
-            encoding: FileSystem.EncodingType.UTF8,
-          });
+          try {
+            rawText = await FileSystem.readAsStringAsync(asset.uri, {
+              encoding: FileSystem.EncodingType.UTF8,
+            });
+          } catch (utfErr) {
+            console.warn('[PDF UTF8 read failed, trying Base64]', utfErr);
+            try {
+              const base64Data = await FileSystem.readAsStringAsync(asset.uri, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              rawText = typeof atob === 'function' ? atob(base64Data) : base64Data;
+            } catch (b64Err) {
+              const response = await fetch(asset.uri);
+              rawText = await response.text();
+            }
+          }
         } else {
           const response = await fetch(asset.uri);
           rawText = await response.text();
         }
-      } catch (readErr) {
+      } catch (readErr: any) {
         // If reading fails just attach the PDF without auto-fill
-        console.warn('[PDF read]', readErr);
+        console.warn('[PDF read error]', readErr);
         setPdfStatus({ type: 'info', text: `📄 ${asset.name} attached — enter values manually.` });
         setIsParsingPdf(false);
         return;
@@ -304,7 +331,9 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       }
     } catch (err: any) {
       console.warn('[handlePickPdf]', err);
-      setPdfStatus({ type: 'error', text: err?.message ?? 'Could not open document picker.' });
+      const msg = err?.message ?? 'Could not open document picker.';
+      setPdfStatus({ type: 'error', text: msg });
+      Alert.alert('File Picker Error', `Could not open file picker:\n${msg}`);
     } finally {
       setIsParsingPdf(false);
     }
