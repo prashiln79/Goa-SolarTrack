@@ -1,18 +1,16 @@
 {
   "expo": {
-    "name": "Goa-SolarTrack",
+    "name": "Goa SolarTrack",
     "slug": "Goa-SolarTrack",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
-    },
     "android": {
       "package": "com.prashiln79.goasolartrack",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0B192C",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -27,6 +25,9 @@
         "projectId": "f06883a1-6234-47cf-aa34-63c6c970ebe0"
       }
     },
-    "owner": "prashiln79"
+    "owner": "prashiln79",
+    "plugins": [
+      "expo-font"
+    ]
   }
 }
