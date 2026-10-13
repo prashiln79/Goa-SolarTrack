@@ -1,7 +1,6 @@
 // ============================================================
-// Analytics Screen — PRD §13
+// Analytics Screen — Clean & Simplified UI (PRD §13)
 // Monthly analytics table + annual aggregate + Solar ROI & Payback
-// PRD §8.1 trend guard: only show % change when >= 3 months
 // ============================================================
 import React, { useState, useMemo } from 'react';
 import {
@@ -16,6 +15,7 @@ import {
   buildAnnualAnalytics,
   calculatePaybackAnalysis,
 } from '../domain/analytics';
+import { saveSystemProfile } from '../services/solarStorage';
 import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
 
 interface AnalyticsScreenProps {
@@ -36,7 +36,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
     () => buildAnnualAnalytics(bills, profile.capacityKw, cleaningEventCount),
     [bills, profile.capacityKw, cleaningEventCount]
   );
-
   const payback = useMemo(
     () => calculatePaybackAnalysis(bills, profile, annual),
     [bills, profile, annual]
@@ -52,31 +51,38 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
       Alert.alert('Invalid Cost', 'Please enter a valid investment cost.');
       return;
     }
-    if (onProfileSave) {
-      try {
-        setIsSavingCost(true);
-        await onProfileSave({
-          ...profile,
-          systemCostInr: parsed,
-        });
-        setIsSavingCost(false);
-        setShowEditCost(false);
-      } catch (e: any) {
-        setIsSavingCost(false);
-        Alert.alert('Error', e?.message || 'Failed to save system cost.');
+
+    try {
+      setIsSavingCost(true);
+      const updatedProfile: SystemProfile = {
+        ...profile,
+        systemCostInr: parsed,
+      };
+
+      // 1. Persist directly to Firebase Firestore & AsyncStorage
+      await saveSystemProfile(updatedProfile);
+
+      // 2. Notify parent state handler if provided
+      if (onProfileSave) {
+        await onProfileSave(updatedProfile);
       }
+
+      setIsSavingCost(false);
+      setShowEditCost(false);
+      Alert.alert('Saved', 'System investment cost updated & synced with Firebase.');
+    } catch (e: any) {
+      setIsSavingCost(false);
+      Alert.alert('Error', e?.message || 'Failed to save system cost.');
     }
   };
 
-  // Ordered newest-first for table
   const tableRows = [...monthlyRows].reverse();
 
   const selfSufficiencyPct =
     annual.totalGenerationKwh > 0
       ? Math.round(
           (annual.totalDirectUseKwh /
-            (annual.totalDirectUseKwh + annual.totalImportKwh)) *
-            100
+            (annual.totalDirectUseKwh + annual.totalImportKwh)) * 100
         )
       : 0;
 
@@ -88,95 +94,26 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
     >
       <Text style={styles.pageTitle}>Solar Analytics</Text>
       <Text style={styles.pageSub}>
-        Aggregated across {bills.length} billing cycle{bills.length === 1 ? '' : 's'}
+        Summary across {bills.length} billing cycle{bills.length === 1 ? '' : 's'}
       </Text>
 
-      {/* ── Solar Investment & Payback Timeline ── */}
+      {/* ── 1. Solar Investment & Payback Timeline ── */}
       <Card
         title="Solar Investment & Payback"
-        subtitle="Capital recovery timeline & 100% free electricity milestone"
+        subtitle={payback.isFullyRecovered ? 'Capital fully recovered!' : `Target break-even: ${payback.breakEvenDate}`}
         badge={
-          <View style={[
-            styles.badge,
-            payback.isFullyRecovered ? styles.badgeSuccess : styles.badgeGold,
-          ]}>
-            <Text style={[
-              styles.badgeText,
-              payback.isFullyRecovered ? { color: COLORS.success } : { color: COLORS.gold },
-            ]}>
-              {payback.isFullyRecovered ? '🎉 100% Free Electricity' : `${payback.recoveryPct}% Recovered`}
+          <View style={[styles.badge, payback.isFullyRecovered ? styles.badgeSuccess : styles.badgeGold]}>
+            <Text style={[styles.badgeText, payback.isFullyRecovered ? { color: COLORS.success } : { color: COLORS.gold }]}>
+              {payback.isFullyRecovered ? '🎉 100% Free Power' : `${payback.recoveryPct}% Recovered`}
             </Text>
           </View>
         }
       >
-        {/* Hero Target / Break-Even Box */}
-        <View style={styles.breakEvenHero}>
-          <View style={styles.breakEvenTop}>
-            <View style={[
-              styles.breakEvenIconWrap,
-              payback.isFullyRecovered && { backgroundColor: `${COLORS.success}20` },
-            ]}>
-              <Ionicons
-                name={payback.isFullyRecovered ? 'checkmark-circle' : 'calendar-outline'}
-                size={22}
-                color={payback.isFullyRecovered ? COLORS.success : COLORS.gold}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.breakEvenLabel}>
-                {payback.isFullyRecovered ? 'FREE OF CHARGE MILESTONE' : 'FULL INVESTMENT RECOVERY BY'}
-              </Text>
-              <Text style={[
-                styles.breakEvenDateVal,
-                payback.isFullyRecovered && { color: COLORS.success },
-              ]}>
-                {payback.breakEvenDate}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.breakEvenSubText}>
-            {payback.isFullyRecovered
-              ? 'Your solar system has fully recovered its initial capital cost and now runs 100% free of charge!'
-              : `Est. ${payback.yearsRemainingFormatted} remaining to recover full capital and enjoy 100% free electricity.`}
-          </Text>
-        </View>
-
-        {/* 3-Col Key Metrics */}
-        <View style={styles.paybackStatsGrid}>
-          <View style={styles.paybackStatCol}>
-            <Text style={styles.paybackStatLabel}>TOTAL PAYBACK</Text>
-            <Text style={[styles.paybackStatVal, { color: COLORS.text }]}>
-              {payback.paybackYearsTotal > 0 ? `${payback.paybackYearsTotal} Yrs` : '—'}
-            </Text>
-            <Text style={styles.paybackStatSub}>From installation</Text>
-          </View>
-
-          <View style={styles.statDivider} />
-
-          <View style={styles.paybackStatCol}>
-            <Text style={styles.paybackStatLabel}>RECOVERED SO FAR</Text>
-            <Text style={[styles.paybackStatVal, { color: COLORS.success }]}>
-              ₹{payback.recoveredSoFarInr.toLocaleString('en-IN')}
-            </Text>
-            <Text style={styles.paybackStatSub}>{payback.recoveryPct}% of investment</Text>
-          </View>
-
-          <View style={styles.statDivider} />
-
-          <View style={styles.paybackStatCol}>
-            <Text style={styles.paybackStatLabel}>ANNUAL SAVINGS</Text>
-            <Text style={[styles.paybackStatVal, { color: COLORS.gold }]}>
-              ₹{payback.annualProjectedSavingsInr.toLocaleString('en-IN')}
-            </Text>
-            <Text style={styles.paybackStatSub}>~₹{Math.round(payback.monthlyAverageSavingsInr).toLocaleString('en-IN')}/mo</Text>
-          </View>
-        </View>
-
-        {/* Recovery Progress Bar */}
-        <View style={styles.recoveryBarSection}>
-          <View style={styles.recoveryBarHeader}>
-            <Text style={styles.recoveryBarTitle}>Capital Recovery Progress</Text>
-            <Text style={[styles.recoveryBarPct, payback.isFullyRecovered && { color: COLORS.success }]}>
+        {/* Recovery Progress */}
+        <View style={styles.recoveryBox}>
+          <View style={styles.recoveryHeader}>
+            <Text style={styles.recoveryTitle}>Capital Recovery Progress</Text>
+            <Text style={[styles.recoveryPctText, payback.isFullyRecovered && { color: COLORS.success }]}>
               {payback.recoveryPct}%
             </Text>
           </View>
@@ -184,67 +121,68 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
             value={payback.recoveryPct}
             color={payback.isFullyRecovered ? COLORS.success : COLORS.gold}
           />
-          <View style={styles.recoveryBarFooter}>
-            <Text style={styles.recoveryMarkerText}>
+          <View style={styles.recoveryFooter}>
+            <Text style={styles.footerMarker}>
               Installed {profile.installationDate ? profile.installationDate.slice(0, 7) : 'Day 1'}
             </Text>
-            <Text style={styles.recoveryMarkerText}>
+            <Text style={styles.footerMarker}>
               {payback.remainingInr > 0 ? `₹${payback.remainingInr.toLocaleString('en-IN')} left` : 'Fully recovered'}
             </Text>
-            <Text style={[
-              styles.recoveryMarkerText,
-              { color: payback.isFullyRecovered ? COLORS.success : COLORS.gold, fontWeight: FONT.semi },
-            ]}>
+            <Text style={[styles.footerMarker, { color: payback.isFullyRecovered ? COLORS.success : COLORS.gold, fontWeight: FONT.semi }]}>
               {payback.isFullyRecovered ? 'Free Electricity' : payback.breakEvenDate}
             </Text>
           </View>
         </View>
 
-        {/* Free of Charge / 25-Year Life Highlight Card */}
-        <View style={styles.freeElectricityCard}>
-          <View style={styles.freeHeaderRow}>
-            <Ionicons name="sparkles" size={16} color={COLORS.gold} />
-            <Text style={styles.freeHeaderTitle}>Post-Recovery: 100% Free Electricity</Text>
-          </View>
-          <Text style={styles.freeBodyText}>
-            After full recovery in <Text style={{ fontWeight: FONT.bold, color: COLORS.text }}>{payback.breakEvenDate}</Text>,
-            every unit of solar power generated is completely free of capital cost for the remainder of the panel's 25-year lifespan.
-          </Text>
-          <View style={styles.profitBanner}>
-            <Text style={styles.profitBannerLabel}>ESTIMATED 25-YEAR NET LIFETIME SAVINGS</Text>
-            <Text style={styles.profitBannerVal}>
-              ₹{payback.estimated25YearNetProfitInr.toLocaleString('en-IN')}
-            </Text>
-          </View>
-        </View>
-
-        <Divider style={{ marginVertical: SPACING.sm }} />
-
-        {/* System Investment Cost Details & Customization */}
-        <View style={styles.costFooterRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.costLabel}>System Investment Capital</Text>
-            <Text style={styles.costVal}>
-              ₹{payback.systemCostInr.toLocaleString('en-IN')}
-              <Text style={styles.costTag}>
-                {payback.isBenchmarkCost ? ' (Goa benchmark ₹55k/kW)' : ' (Customized)'}
-              </Text>
-            </Text>
-          </View>
-          {onProfileSave && (
+        {/* 3 Metrics: Invested, Recovered, Savings */}
+        <View style={styles.metricRow}>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricLabel}>INVESTMENT</Text>
+            <Text style={styles.metricVal}>₹{(payback.systemCostInr / 1000).toFixed(0)}k</Text>
             <TouchableOpacity
               id="btn-edit-system-cost"
-              style={styles.editCostBtn}
+              style={styles.editPill}
               onPress={() => {
                 setCostInput(String(payback.systemCostInr));
                 setShowEditCost(true);
               }}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
             >
-              <Ionicons name="pencil" size={13} color={COLORS.gold} />
-              <Text style={styles.editCostBtnText}>Edit Cost</Text>
+              <Ionicons name="pencil" size={11} color={COLORS.gold} />
+              <Text style={styles.editPillText}>Edit Cost</Text>
             </TouchableOpacity>
-          )}
+          </View>
+
+          <View style={styles.statSep} />
+
+          <View style={styles.metricCard}>
+            <Text style={styles.metricLabel}>RECOVERED</Text>
+            <Text style={[styles.metricVal, { color: COLORS.success }]}>
+              ₹{(payback.recoveredSoFarInr / 1000).toFixed(0)}k
+            </Text>
+            <Text style={styles.metricSub}>{payback.recoveryPct}% recovered</Text>
+          </View>
+
+          <View style={styles.statSep} />
+
+          <View style={styles.metricCard}>
+            <Text style={styles.metricLabel}>ANNUAL SAVINGS</Text>
+            <Text style={[styles.metricVal, { color: COLORS.gold }]}>
+              ₹{(payback.annualProjectedSavingsInr / 1000).toFixed(0)}k
+            </Text>
+            <Text style={styles.metricSub}>~₹{Math.round(payback.monthlyAverageSavingsInr).toLocaleString('en-IN')}/mo</Text>
+          </View>
+        </View>
+
+        {/* Lifetime Profit Highlight */}
+        <View style={styles.lifetimeBanner}>
+          <Ionicons name="sparkles" size={16} color={COLORS.gold} />
+          <Text style={styles.lifetimeText}>
+            Est. 25-Year Net Profit:{' '}
+            <Text style={styles.lifetimeVal}>
+              ₹{payback.estimated25YearNetProfitInr.toLocaleString('en-IN')}
+            </Text>
+          </Text>
         </View>
       </Card>
 
@@ -252,36 +190,34 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
         <InfoNote text="Add your first monthly bill to see analytics." color={COLORS.info} />
       )}
 
-      {/* ── Annual Aggregate ── */}
+      {/* ── 2. Annual Summary (Energy & Financials) ── */}
       {bills.length > 0 && (
         <Card
           title="Lifetime / Annual Summary"
-          subtitle="Aggregate across all recorded billing cycles"
-          badge={
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>Est. Savings</Text>
-            </View>
-          }
+          subtitle="Aggregate figures across all bills"
         >
+          {/* Savings vs Bills Paid */}
           <View style={styles.impactRow}>
-            <ImpactCol
-              label="Estimated Solar Savings"
-              value={`₹${annual.estimatedAvoidedCostInr.toFixed(0)}`}
-              sub="Avoided LTDS-II retail cost†"
-              color={COLORS.success}
-            />
+            <View style={styles.impactCol}>
+              <Text style={styles.impactLabel}>EST. SOLAR SAVINGS</Text>
+              <Text style={[styles.impactVal, { color: COLORS.success }]}>
+                ₹{annual.estimatedAvoidedCostInr.toFixed(0)}
+              </Text>
+              <Text style={styles.impactSub}>Avoided LTDS-II cost</Text>
+            </View>
             <View style={styles.impactDivider} />
-            <ImpactCol
-              label="Total Bills Paid"
-              value={`₹${annual.totalBillsPaid.toFixed(0)}`}
-              sub="Fixed charges, FPPCA, duties"
-              color={COLORS.text}
-            />
+            <View style={styles.impactCol}>
+              <Text style={styles.impactLabel}>TOTAL BILLS PAID</Text>
+              <Text style={[styles.impactVal, { color: COLORS.text }]}>
+                ₹{annual.totalBillsPaid.toFixed(0)}
+              </Text>
+              <Text style={styles.impactSub}>Fixed charges, duties</Text>
+            </View>
           </View>
 
           <Divider style={{ marginVertical: SPACING.sm }} />
 
-          {/* Energy flow totals */}
+          {/* 4 Energy Flow Cards */}
           <View style={styles.energyFlowGrid}>
             <FlowItem label="Total Generated" value={annual.totalGenerationKwh} color={COLORS.generation} icon="sunny-outline" />
             <FlowItem label="Direct Solar Use" value={annual.totalDirectUseKwh} color={COLORS.directUse} icon="flash-outline" />
@@ -289,7 +225,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
             <FlowItem label="Total Imported" value={annual.totalImportKwh} color={COLORS.import} icon="arrow-down-outline" />
           </View>
 
-          {/* Self-sufficiency */}
+          {/* Self-Sufficiency */}
           <View style={styles.selfSuffBox}>
             <View style={styles.selfSuffHeader}>
               <Text style={styles.selfSuffLabel}>Direct Solar Self-Sufficiency</Text>
@@ -297,23 +233,18 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
             </View>
             <ProgressBar value={selfSufficiencyPct} color={COLORS.directUse} />
             <Text style={styles.selfSuffNote}>
-              Percentage of total electricity needs met directly by daytime solar (not counting banked credits).
+              Percentage of total electricity needs met directly by daytime solar.
             </Text>
           </View>
-
-          <Text style={styles.estimateTag}>
-            † Estimated using LTDS-II telescopic energy slabs + ₹25/kW fixed charge. Excludes FPPCA, duties. Labelled as estimate per PRD §7.2.
-          </Text>
         </Card>
       )}
 
-      {/* ── Monthly Performance Table ── */}
+      {/* ── 3. Monthly Performance Table ── */}
       {tableRows.length > 0 && (
         <Card
           title="Monthly Performance Table"
-          subtitle="PRD §13.1 — generation, import/export, credit and bill per cycle"
+          subtitle="Cycle-by-cycle generation, credits and bills"
         >
-          {/* Header row */}
           <View style={styles.tableRow}>
             <Text style={[styles.th, { flex: 1.6 }]}>Period</Text>
             <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Gen</Text>
@@ -337,7 +268,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                     </Text>
                   )}
                 </View>
-                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: COLORS.generation }]}>
+                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: COLORS.generation, fontWeight: FONT.semi }]}>
                   {row.generationKwh !== null ? row.generationKwh : '—'}
                 </Text>
                 <Text style={[styles.td, { flex: 1, textAlign: 'right', color: COLORS.export }]}>
@@ -350,7 +281,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                   ₹{row.billAmount.toFixed(0)}
                 </Text>
               </View>
-              {/* avg per day sub-row */}
               {row.avgGenerationPerDay !== null && (
                 <Text style={styles.avgDay}>  {row.avgGenerationPerDay} kWh/day avg • {row.billingDays} days</Text>
               )}
@@ -417,7 +347,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                 disabled={isSavingCost}
               >
                 <Text style={styles.saveBtnText}>
-                  {isSavingCost ? 'Saving…' : 'Save Investment'}
+                  {isSavingCost ? 'Saving to Firebase…' : 'Save Investment'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -428,21 +358,11 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
   );
 };
 
-const ImpactCol: React.FC<{ label: string; value: string; sub: string; color: string }> = ({
-  label, value, sub, color,
-}) => (
-  <View style={{ flex: 1, alignItems: 'center' }}>
-    <Text style={styles.impactLabel}>{label}</Text>
-    <Text style={[styles.impactValue, { color }]}>{value}</Text>
-    <Text style={styles.impactSub}>{sub}</Text>
-  </View>
-);
-
 const FlowItem: React.FC<{ label: string; value: number; color: string; icon: string }> = ({
   label, value, color, icon,
 }) => (
   <View style={styles.flowItem}>
-    <Ionicons name={icon as any} size={16} color={color} />
+    <Ionicons name={icon as any} size={15} color={color} />
     <Text style={styles.flowLabel}>{label}</Text>
     <Text style={[styles.flowValue, { color }]}>{value} <Text style={styles.flowUnit}>kWh</Text></Text>
   </View>
@@ -450,59 +370,43 @@ const FlowItem: React.FC<{ label: string; value: number; color: string; icon: st
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: SPACING.lg, paddingBottom: SPACING.xxl + 20 },
-  pageTitle: { fontSize: 20, fontWeight: FONT.heavy, color: COLORS.text, marginBottom: 4 },
-  pageSub: { fontSize: 12, color: COLORS.textSub, marginBottom: SPACING.md },
-  badge: {
-    backgroundColor: COLORS.glowGreen, borderWidth: 1, borderColor: `${COLORS.success}44`,
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.full,
-  },
-  badgeSuccess: { backgroundColor: COLORS.glowGreen, borderColor: `${COLORS.success}44` },
-  badgeGold: { backgroundColor: COLORS.glowGold, borderColor: `${COLORS.gold}44` },
-  badgeText: { fontSize: 10, fontWeight: FONT.bold, color: COLORS.success },
+  content: { padding: SPACING.lg, paddingBottom: SPACING.xxl + 20, gap: SPACING.md },
+  pageTitle: { fontSize: 22, fontWeight: FONT.heavy, color: COLORS.text, marginBottom: 2 },
+  pageSub: { fontSize: 13, color: COLORS.textSub },
 
-  breakEvenHero: {
+  badge: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADIUS.full,
+  },
+  badgeSuccess: { backgroundColor: `${COLORS.success}20`, borderWidth: 1, borderColor: `${COLORS.success}44` },
+  badgeGold: { backgroundColor: `${COLORS.gold}20`, borderWidth: 1, borderColor: `${COLORS.gold}44` },
+  badgeText: { fontSize: 11, fontWeight: FONT.bold },
+
+  // Recovery Section
+  recoveryBox: {
     backgroundColor: COLORS.surfaceRaised,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: `${COLORS.gold}33`,
+    borderColor: COLORS.borderSubtle,
     padding: SPACING.md,
     marginBottom: SPACING.md,
   },
-  breakEvenTop: {
+  recoveryHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: SPACING.sm,
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  breakEvenIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: `${COLORS.gold}18`,
-    alignItems: 'center',
-    justifyContent: 'center',
+  recoveryTitle: { fontSize: 12, fontWeight: FONT.semi, color: COLORS.text },
+  recoveryPctText: { fontSize: 14, fontWeight: FONT.heavy, color: COLORS.gold },
+  recoveryFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
   },
-  breakEvenLabel: {
-    fontSize: 10,
-    fontWeight: FONT.bold,
-    color: COLORS.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  breakEvenDateVal: {
-    fontSize: 20,
-    fontWeight: FONT.heavy,
-    color: COLORS.text,
-    marginTop: 1,
-  },
-  breakEvenSubText: {
-    fontSize: 12,
-    color: COLORS.textSub,
-    lineHeight: 16,
-  },
+  footerMarker: { fontSize: 10, color: COLORS.textMuted },
 
-  paybackStatsGrid: {
+  // 3-Metric Row
+  metricRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surfaceRaised,
@@ -513,171 +417,104 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xs,
     marginBottom: SPACING.md,
   },
-  paybackStatCol: {
+  metricCard: {
     flex: 1,
     alignItems: 'center',
+    paddingVertical: 2,
   },
-  paybackStatLabel: {
+  metricLabel: {
     fontSize: 9,
     fontWeight: FONT.semi,
     color: COLORS.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
-  paybackStatVal: {
-    fontSize: 14,
+  metricVal: {
+    fontSize: 15,
     fontWeight: FONT.heavy,
-    marginTop: 3,
+    color: COLORS.text,
+    marginVertical: 3,
   },
-  paybackStatSub: {
+  metricSub: {
     fontSize: 9,
     color: COLORS.textMuted,
-    marginTop: 2,
   },
-  statDivider: {
+  statSep: {
     width: 1,
     height: 32,
     backgroundColor: COLORS.border,
   },
-
-  recoveryBarSection: {
-    marginBottom: SPACING.md,
-  },
-  recoveryBarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  recoveryBarTitle: {
-    fontSize: 11,
-    fontWeight: FONT.semi,
-    color: COLORS.text,
-  },
-  recoveryBarPct: {
-    fontSize: 12,
-    fontWeight: FONT.bold,
-    color: COLORS.gold,
-  },
-  recoveryBarFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 5,
-  },
-  recoveryMarkerText: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-  },
-
-  freeElectricityCard: {
-    backgroundColor: `${COLORS.gold}0D`,
-    borderWidth: 1,
-    borderColor: `${COLORS.gold}30`,
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
-    marginBottom: SPACING.sm,
-  },
-  freeHeaderRow: {
+  editPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  freeHeaderTitle: {
-    fontSize: 12,
-    fontWeight: FONT.bold,
-    color: COLORS.gold,
-  },
-  freeBodyText: {
-    fontSize: 11,
-    color: COLORS.textSub,
-    lineHeight: 16,
-    marginBottom: 8,
-  },
-  profitBanner: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.sm,
-    borderWidth: 1,
-    borderColor: `${COLORS.gold}22`,
-    padding: 8,
-    alignItems: 'center',
-  },
-  profitBannerLabel: {
-    fontSize: 9,
-    fontWeight: FONT.bold,
-    color: COLORS.textMuted,
-    letterSpacing: 0.4,
-  },
-  profitBannerVal: {
-    fontSize: 16,
-    fontWeight: FONT.heavy,
-    color: COLORS.success,
-    marginTop: 2,
-  },
-
-  costFooterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 2,
-  },
-  costLabel: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  costVal: {
-    fontSize: 13,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
-    marginTop: 2,
-  },
-  costTag: {
-    fontSize: 10,
-    fontWeight: FONT.regular,
-    color: COLORS.textMuted,
-  },
-  editCostBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: COLORS.glowGold,
-    borderWidth: 1,
-    borderColor: `${COLORS.gold}44`,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: 3,
+    backgroundColor: `${COLORS.gold}18`,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: RADIUS.full,
   },
-  editCostBtnText: {
-    fontSize: 11,
+  editPillText: {
+    fontSize: 10,
     fontWeight: FONT.bold,
     color: COLORS.gold,
   },
 
-  impactRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.sm },
-  impactDivider: { width: 1, height: 48, backgroundColor: COLORS.border },
-  impactLabel: { fontSize: 11, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.4, textAlign: 'center' },
-  impactValue: { fontSize: 22, fontWeight: FONT.heavy, color: COLORS.text, marginTop: 4 },
-  impactSub: { fontSize: 10, color: COLORS.textMuted, marginTop: 2, textAlign: 'center' },
-  energyFlowGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  // Lifetime Banner
+  lifetimeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: `${COLORS.gold}10`,
+    borderWidth: 1,
+    borderColor: `${COLORS.gold}25`,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.md,
+  },
+  lifetimeText: { fontSize: 12, color: COLORS.textSub },
+  lifetimeVal: { fontWeight: FONT.heavy, color: COLORS.success },
+
+  // Financial Impact (Savings vs Paid)
+  impactRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.xs },
+  impactCol: { flex: 1, alignItems: 'center' },
+  impactDivider: { width: 1, height: 44, backgroundColor: COLORS.border },
+  impactLabel: { fontSize: 10, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
+  impactVal: { fontSize: 20, fontWeight: FONT.heavy, marginTop: 2 },
+  impactSub: { fontSize: 10, color: COLORS.textMuted, marginTop: 2 },
+
+  // Energy Flow Grid
+  energyFlowGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs, marginVertical: SPACING.xs },
   flowItem: {
-    flex: 1, minWidth: '46%', backgroundColor: COLORS.surfaceRaised, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.borderSubtle, padding: SPACING.sm, alignItems: 'center', gap: 4,
+    flex: 1,
+    minWidth: '47%',
+    backgroundColor: COLORS.surfaceRaised,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.borderSubtle,
+    padding: SPACING.sm,
+    alignItems: 'center',
+    gap: 2,
   },
   flowLabel: { fontSize: 10, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
-  flowValue: { fontSize: 15, fontWeight: FONT.heavy },
-  flowUnit: { fontSize: 11, fontWeight: FONT.regular, color: COLORS.textMuted },
+  flowValue: { fontSize: 14, fontWeight: FONT.heavy },
+  flowUnit: { fontSize: 10, fontWeight: FONT.regular, color: COLORS.textMuted },
+
+  // Self-Sufficiency
   selfSuffBox: {
-    backgroundColor: COLORS.surfaceRaised, borderRadius: RADIUS.md, borderWidth: 1,
-    borderColor: COLORS.borderSubtle, padding: SPACING.md, marginTop: SPACING.sm, gap: 6,
+    backgroundColor: COLORS.surfaceRaised,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.borderSubtle,
+    padding: SPACING.md,
+    marginTop: SPACING.xs,
+    gap: 6,
   },
   selfSuffHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   selfSuffLabel: { fontSize: 12, fontWeight: FONT.semi, color: COLORS.text },
-  selfSuffPct: { fontSize: 16, fontWeight: FONT.heavy },
+  selfSuffPct: { fontSize: 15, fontWeight: FONT.heavy },
   selfSuffNote: { fontSize: 10, color: COLORS.textMuted, lineHeight: 14 },
-  estimateTag: { fontSize: 9, color: COLORS.textMuted, fontStyle: 'italic', marginTop: SPACING.sm, lineHeight: 13 },
 
+  // Table
   tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4 },
   th: { fontSize: 10, fontWeight: FONT.heavy, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
   tdPeriod: { fontSize: 12, fontWeight: FONT.semi, color: COLORS.text },
@@ -685,6 +522,7 @@ const styles = StyleSheet.create({
   td: { fontSize: 12, color: COLORS.text },
   avgDay: { fontSize: 10, color: COLORS.textMuted, paddingHorizontal: 4, paddingBottom: 4 },
 
+  // Edit Modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: COLORS.surface,
