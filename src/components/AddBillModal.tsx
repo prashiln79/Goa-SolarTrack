@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import { File as ExpoFile } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import { SolarBill, SystemProfile } from '../types/solar';
 import { calculateEnergyAccounting } from '../domain/energyAccounting';
@@ -31,6 +32,7 @@ interface AddBillModalProps {
   onSave: (bill: SolarBill) => Promise<void>;
   latestBill?: SolarBill | null;
   profile?: SystemProfile | null;
+  existingBills?: SolarBill[];
 }
 
 const MONTH_NAMES = [
@@ -48,12 +50,133 @@ function parseNum(s: string): number | null {
   return isNaN(v) || s.trim() === '' ? null : v;
 }
 
+/**
+ * Decodes a Base64 string into a raw binary string.
+ * PDFs contain arbitrary binary byte streams (0x00-0xFF), which fail when read
+ * directly as UTF-8 strings across the React Native native bridge.
+ */
+function decodeBase64ToBinaryString(base64: string): string {
+  try {
+    if (typeof atob === 'function') {
+      return atob(base64.replace(/\s/g, ''));
+    }
+  } catch (e) {
+    console.warn('[atob error, using fallback]', e);
+  }
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  const clean = base64.replace(/[^A-Za-z0-9+/=]/g, '');
+  const out: string[] = [];
+  let i = 0;
+  while (i < clean.length) {
+    const b1 = chars.indexOf(clean.charAt(i++));
+    const b2 = chars.indexOf(clean.charAt(i++));
+    const b3 = chars.indexOf(clean.charAt(i++));
+    const b4 = chars.indexOf(clean.charAt(i++));
+    const c1 = (b1 << 2) | (b2 >> 4);
+    const c2 = ((b2 & 15) << 4) | (b3 >> 2);
+    const c3 = ((b3 & 3) << 6) | b4;
+    out.push(String.fromCharCode(c1));
+    if (b3 !== 64 && b3 !== -1) out.push(String.fromCharCode(c2));
+    if (b4 !== 64 && b4 !== -1) out.push(String.fromCharCode(c3));
+  }
+  return out.join('');
+}
+
+/**
+ * Robust cross-platform reader that reads a file URI as Base64.
+ * Uses native FileSystem where accessible, and falls back to fetch + Blob + FileReader
+ * to support Android Content URIs, Expo Go scoped cache directories, and web blobs.
+ */
+async function readFileAsBase64(uri: string): Promise<string> {
+  // 1. Copy via ContentResolver to app internal cache directory
+  // This seamlessly handles Samsung My Files providers, Expo Go scoped cache permissions,
+  // and content:// stream access across all Android devices.
+  if (Platform.OS !== 'web' && FileSystem.cacheDirectory && FileSystem.copyAsync) {
+    const tempDest = `${FileSystem.cacheDirectory}bill_${Date.now()}.pdf`;
+    try {
+      await FileSystem.copyAsync({
+        from: uri,
+        to: tempDest,
+      });
+      let b64 = '';
+      if (FileSystem.readAsStringAsync) {
+        b64 = await FileSystem.readAsStringAsync(tempDest, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      } else {
+        const file = new ExpoFile(tempDest);
+        b64 = await file.base64();
+      }
+      try {
+        await FileSystem.deleteAsync(tempDest, { idempotent: true });
+      } catch (_) {}
+      if (b64 && b64.length > 0) {
+        return b64;
+      }
+    } catch (copyErr) {
+      console.warn('[copyAsync to cache failed, falling back to direct readers]', copyErr);
+      try {
+        await FileSystem.deleteAsync(tempDest, { idempotent: true });
+      } catch (_) {}
+    }
+  }
+
+  // 2. Modern Expo File API (supports content:// and file:// natively)
+  try {
+    const file = new ExpoFile(uri);
+    const b64 = await file.base64();
+    if (b64 && typeof b64 === 'string' && b64.length > 0) {
+      return b64;
+    }
+  } catch (expoFileErr) {
+    console.warn('[Expo File.base64 failed]', expoFileErr);
+  }
+
+  // 3. Legacy FileSystem.readAsStringAsync fallback
+  if (Platform.OS !== 'web' && FileSystem.readAsStringAsync) {
+    try {
+      const b64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      if (b64 && b64.length > 0) {
+        return b64;
+      }
+    } catch (fsErr) {
+      console.warn('[FileSystem Base64 read failed]', fsErr);
+    }
+  }
+
+  // 4. Fetch + Blob + FileReader fallback (for web or standard HTTP/data/blob URIs)
+  try {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const res = reader.result;
+        if (typeof res === 'string') {
+          const base64 = res.includes(',') ? res.split(',')[1] : res;
+          resolve(base64);
+        } else {
+          reject(new Error('FileReader did not produce a string result.'));
+        }
+      };
+      reader.onerror = () => reject(reader.error || new Error('FileReader failed to read blob.'));
+      reader.readAsDataURL(blob);
+    });
+  } catch (fetchErr) {
+    console.warn('[Fetch+FileReader fallback failed]', fetchErr);
+    throw fetchErr;
+  }
+}
+
 export const AddBillModal: React.FC<AddBillModalProps> = ({
   visible,
   onClose,
   onSave,
   latestBill,
   profile,
+  existingBills,
 }) => {
   // ── Month & Year state ──
   const now = new Date();
@@ -184,8 +307,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       setIsParsingPdf(true);
 
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'application/x-pdf', '*/*'],
-        copyToCacheDirectory: true,
+        type: Platform.OS === 'android' ? '*/*' : 'application/pdf',
+        copyToCacheDirectory: Platform.OS === 'android' ? false : true,
       });
 
       if (result.canceled || !result.assets || result.assets.length === 0) {
@@ -212,30 +335,11 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       setAttachedPdf({ name: asset.name, size: asset.size, uri: asset.uri });
       setPdfStatus({ type: 'info', text: `Reading ${asset.name}…` });
 
-      // Read raw PDF bytes — try UTF-8 first, fallback to Base64 decoding or fetch
+      // Read raw PDF bytes via robust Base64 pipeline (supports both native FileSystem and fetch fallback)
       let rawText = '';
       try {
-        if (Platform.OS !== 'web' && FileSystem.readAsStringAsync) {
-          try {
-            rawText = await FileSystem.readAsStringAsync(asset.uri, {
-              encoding: FileSystem.EncodingType.UTF8,
-            });
-          } catch (utfErr) {
-            console.warn('[PDF UTF8 read failed, trying Base64]', utfErr);
-            try {
-              const base64Data = await FileSystem.readAsStringAsync(asset.uri, {
-                encoding: FileSystem.EncodingType.Base64,
-              });
-              rawText = typeof atob === 'function' ? atob(base64Data) : base64Data;
-            } catch (b64Err) {
-              const response = await fetch(asset.uri);
-              rawText = await response.text();
-            }
-          }
-        } else {
-          const response = await fetch(asset.uri);
-          rawText = await response.text();
-        }
+        const base64Data = await readFileAsBase64(asset.uri);
+        rawText = decodeBase64ToBinaryString(base64Data);
       } catch (readErr: any) {
         // If reading fails just attach the PDF without auto-fill
         console.warn('[PDF read error]', readErr);
@@ -312,23 +416,73 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
         fieldsDetected++;
       }
 
-      if (fieldsDetected > 0) {
-        const periodNote = parsed.periodLabel ? ` (${parsed.periodLabel})` : '';
+      if (fieldsDetected === 0) {
+        setAttachedPdf(null);
+        const errorDetail = diagnostics?.isScannedOrImageOnly
+          ? 'This PDF appears to be a scanned image or photo without selectable digital text.\n\nPlease upload an official digital PDF downloaded from the Goa Electricity Department portal, or enter your readings manually.'
+          : diagnostics?.error ||
+            'This document does not contain recognizable Goa Electricity Department (EDG) bill data.\n\nPlease check the file or enter your readings manually.';
+
         setPdfStatus({
-          type: 'success',
-          text: `✅ ${fieldsDetected} fields auto-filled${periodNote} — please review below.`,
+          type: 'error',
+          text: `⚠️ Not a valid EDG bill: ${diagnostics?.error || 'No bill data detected'}.`,
         });
-      } else if (diagnostics?.error) {
-        setPdfStatus({
-          type: 'info',
-          text: `📄 ${diagnostics.error}`,
-        });
-      } else {
-        setPdfStatus({
-          type: 'info',
-          text: `📄 ${asset.name} attached — enter values manually.`,
-        });
+
+        Alert.alert('Invalid Bill Document', errorDetail, [{ text: 'OK' }]);
+        setIsParsingPdf(false);
+        return;
       }
+
+      // Check if this month's bill or bill number already exists in history
+      const detectedPeriod = parsed.periodLabel || (parsed.periodMonth !== undefined && parsed.periodYear !== undefined
+        ? `${MONTH_NAMES[parsed.periodMonth]} ${parsed.periodYear}`
+        : null);
+
+      const duplicate = existingBills?.find((b) => {
+        if (parsed.billNumber && b.billNumber && b.billNumber.trim() === parsed.billNumber.trim()) {
+          return true;
+        }
+        if (detectedPeriod && b.period.toLowerCase() === detectedPeriod.toLowerCase()) {
+          return true;
+        }
+        return false;
+      });
+
+      if (duplicate) {
+        Alert.alert(
+          'Duplicate Bill Detected',
+          `A bill for ${duplicate.period}${duplicate.billNumber ? ` (Bill #${duplicate.billNumber})` : ''} already exists in your records.\n\nUploading this will overwrite your existing bill when saved.`,
+          [
+            {
+              text: 'Cancel Upload',
+              style: 'cancel',
+              onPress: () => {
+                setAttachedPdf(null);
+                setPdfStatus({
+                  type: 'info',
+                  text: `ℹ️ Kept existing ${duplicate.period} bill record.`,
+                });
+              },
+            },
+            {
+              text: 'Review & Overwrite',
+              style: 'destructive',
+            },
+          ]
+        );
+      } else if (parsed.importKwh === undefined || parsed.exportKwh === undefined) {
+        Alert.alert(
+          'Incomplete Bill Data',
+          'Some key solar readings (Grid Import or Export) could not be detected automatically. Please check and fill in the missing fields before saving.',
+          [{ text: 'Review Readings' }]
+        );
+      }
+
+      const periodNote = parsed.periodLabel ? ` (${parsed.periodLabel})` : '';
+      setPdfStatus({
+        type: 'success',
+        text: `✅ ${fieldsDetected} fields auto-filled${periodNote} — please review below.`,
+      });
     } catch (err: any) {
       console.warn('[handlePickPdf]', err);
       const msg = err?.message ?? 'Could not open document picker.';
@@ -413,15 +567,49 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     };
 
 
-    try {
-      setIsSubmitting(true);
-      await onSave(bill);
-      setIsSubmitting(false);
-      onClose();
-    } catch (e: any) {
-      setIsSubmitting(false);
-      setSaveError(e?.message ?? 'Save failed — please try again.');
+    const commitSave = async () => {
+      try {
+        setIsSubmitting(true);
+        await onSave(bill);
+        setIsSubmitting(false);
+        onClose();
+      } catch (e: any) {
+        setIsSubmitting(false);
+        setSaveError(e?.message ?? 'Save failed — please try again.');
+      }
+    };
+
+    // Prevent accidental duplicate submission for the same billing month
+    const targetPeriod = derivedDates.label;
+    const existingDuplicate = existingBills?.find((b) => {
+      if (cleanBillNum && b.billNumber && b.billNumber.trim() === cleanBillNum) {
+        return true;
+      }
+      if (b.period && b.period.toLowerCase() === targetPeriod.toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+
+    if (existingDuplicate) {
+      Alert.alert(
+        'Bill Already Exists',
+        `A record for ${existingDuplicate.period}${existingDuplicate.billNumber ? ` (Bill #${existingDuplicate.billNumber})` : ''} already exists.\n\nDo you want to update and overwrite it with these values?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Overwrite & Save',
+            style: 'destructive',
+            onPress: () => {
+              commitSave();
+            },
+          },
+        ]
+      );
+      return;
     }
+
+    await commitSave();
   };
 
   return (

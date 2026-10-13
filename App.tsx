@@ -377,6 +377,7 @@ function MainApp() {
         onSave={handleSaveBill}
         latestBill={bills.length > 0 ? bills[0] : null}
         profile={profile}
+        existingBills={bills}
       />
       <AddCleaningModal
         visible={isAddCleanOpen}
