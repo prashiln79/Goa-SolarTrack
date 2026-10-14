@@ -79,7 +79,12 @@ export function calculateFixedCharge(
   capacityKw: number,
   ratePerKw: number = LTDS_II_FY2026_27.fixedChargePerKwPerMonth
 ): number {
-  const roundedKw = Math.ceil(capacityKw || 1);
+  // Guard against values entered in Watts (e.g. 5000W -> 5kW) or erroneous high values > 100kW for residential LTDS-II
+  const normalizedKw =
+    capacityKw > 100
+      ? (capacityKw >= 1000 ? Math.min(50, capacityKw / 1000) : 5.0)
+      : Math.max(1, capacityKw || 1);
+  const roundedKw = Math.ceil(normalizedKw);
   return round2(roundedKw * ratePerKw);
 }
 

@@ -12,6 +12,7 @@ import { Card, Divider, LedgerRow, InfoNote } from '../components/ui/UIKit';
 import { testFirestoreConnection, seedCanonicalData } from '../services/solarStorage';
 import { runCanonicalVerification } from '../domain/energyAccounting';
 import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
+import { DateField } from '../components/ui/DatePickerModal';
 
 interface SettingsScreenProps {
   profile: SystemProfile;
@@ -90,11 +91,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const handleSaveProfile = async () => {
-    const cap = parseFloat(capacityKw);
-    if (!cap || cap <= 0) {
-      Alert.alert('Invalid', 'Please enter a valid system capacity in kW.');
+    const rawCap = parseFloat(capacityKw);
+    if (!rawCap || rawCap <= 0) {
+      Alert.alert('Invalid', 'Please enter a valid system capacity in kW (e.g. 5.0).');
       return;
     }
+    const cap = rawCap > 100 ? (rawCap >= 1000 ? rawCap / 1000 : 5.0) : rawCap;
     const updated: SystemProfile = {
       ...profile,
       capacityKw: cap,
@@ -104,7 +106,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       panelCount: parseInt(panelCount) || undefined,
       inverterModel: inverterModel.trim() || undefined,
       settlementRateInr: parseFloat(settlementRate) || 3.5,
-      systemCostInr: parseFloat(systemCost) || undefined,
+      systemCostInr: (() => {
+        const clean = systemCost.trim().toLowerCase().replace(/,/g, '');
+        if (!clean) return undefined;
+        const lakhMatch = clean.match(/^([\d.]+)\s*(?:lakh|lakhs|lac|lacs|l)$/);
+        if (lakhMatch) {
+          const val = parseFloat(lakhMatch[1]);
+          return isNaN(val) ? undefined : Math.round(val * 100000);
+        }
+        const num = parseFloat(clean);
+        if (isNaN(num) || num <= 0) return undefined;
+        return num <= 100 ? Math.round(num * 100000) : Math.round(num);
+      })(),
     };
     try {
       setIsSavingProfile(true);
@@ -323,7 +336,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <ProfileField label="System Capacity (kW) *" value={capacityKw} onChange={setCapacityKw} keyboardType="numeric" />
               <ProfileField label="Location / Taluka" value={location} onChange={setLocation} />
               <ProfileField label="Tariff Category" value={tariff} onChange={setTariff} />
-              <ProfileField label="Installation Date (YYYY-MM-DD)" value={installDate} onChange={setInstallDate} />
+              <DateField label="Installation Date" value={installDate} onChange={setInstallDate} placeholder="YYYY-MM-DD" />
               <ProfileField label="Panel Count" value={panelCount} onChange={setPanelCount} keyboardType="numeric" />
               <ProfileField label="Inverter Make/Model" value={inverterModel} onChange={setInverterModel} />
               <ProfileField label="APPC Settlement Rate (₹/kWh)" value={settlementRate} onChange={setSettlementRate} keyboardType="numeric" />

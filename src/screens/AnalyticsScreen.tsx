@@ -45,10 +45,34 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
   const [costInput, setCostInput] = useState(String(payback.systemCostInr));
   const [isSavingCost, setIsSavingCost] = useState(false);
 
+  const parseSystemCostInput = (input: string): number => {
+    const clean = input.trim().toLowerCase().replace(/,/g, '');
+    if (!clean) return 0;
+
+    const lakhMatch = clean.match(/^([\d.]+)\s*(?:lakh|lakhs|lac|lacs|l)$/);
+    if (lakhMatch) {
+      const val = parseFloat(lakhMatch[1]);
+      return isNaN(val) ? 0 : Math.round(val * 100000);
+    }
+
+    const kMatch = clean.match(/^([\d.]+)\s*k$/);
+    if (kMatch) {
+      const val = parseFloat(kMatch[1]);
+      return isNaN(val) ? 0 : Math.round(val * 1000);
+    }
+
+    const num = parseFloat(clean);
+    if (isNaN(num) || num <= 0) return 0;
+    if (num <= 100) {
+      return Math.round(num * 100000);
+    }
+    return Math.round(num);
+  };
+
   const handleSaveCost = async () => {
-    const parsed = parseFloat(costInput.replace(/,/g, ''));
-    if (isNaN(parsed) || parsed < 0) {
-      Alert.alert('Invalid Cost', 'Please enter a valid investment cost.');
+    const parsed = parseSystemCostInput(costInput);
+    if (parsed <= 0) {
+      Alert.alert('Invalid Cost', 'Please enter a valid investment cost (e.g. 300000 or 3 Lac).');
       return;
     }
 
@@ -78,13 +102,28 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
 
   const tableRows = [...monthlyRows].reverse();
 
+  const totalConsumptionKwh = annual.totalDirectUseKwh + annual.totalImportKwh;
   const selfSufficiencyPct =
-    annual.totalGenerationKwh > 0
-      ? Math.round(
-          (annual.totalDirectUseKwh /
-            (annual.totalDirectUseKwh + annual.totalImportKwh)) * 100
+    totalConsumptionKwh > 0
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            Math.round((annual.totalDirectUseKwh / totalConsumptionKwh) * 100)
+          )
         )
       : 0;
+
+  const formatInrCompact = (val: number): string => {
+    if (val >= 100000) {
+      const inLakhs = val / 100000;
+      return `₹${inLakhs.toFixed(inLakhs % 1 === 0 ? 0 : 1)}L`;
+    }
+    if (val >= 10000) {
+      return `₹${(val / 1000).toFixed(1)}k`;
+    }
+    return `₹${Math.round(val).toLocaleString('en-IN')}`;
+  };
 
   return (
     <ScrollView
@@ -100,7 +139,13 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
       {/* ── 1. Solar Investment & Payback Timeline ── */}
       <Card
         title="Solar Investment & Payback"
-        subtitle={payback.isFullyRecovered ? 'Capital fully recovered!' : `Target break-even: ${payback.breakEvenDate}`}
+        subtitle={
+          payback.isFullyRecovered
+            ? 'Capital fully recovered!'
+            : payback.remainingMonths > 0
+            ? `Target break-even: ${payback.breakEvenDate} (${payback.yearsRemainingFormatted})`
+            : `Target break-even: ${payback.breakEvenDate}`
+        }
         badge={
           <View style={[styles.badge, payback.isFullyRecovered ? styles.badgeSuccess : styles.badgeGold]}>
             <Text style={[styles.badgeText, payback.isFullyRecovered ? { color: COLORS.success } : { color: COLORS.gold }]}>
@@ -138,7 +183,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
         <View style={styles.metricRow}>
           <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>INVESTMENT</Text>
-            <Text style={styles.metricVal}>₹{(payback.systemCostInr / 1000).toFixed(0)}k</Text>
+            <Text style={styles.metricVal}>{formatInrCompact(payback.systemCostInr)}</Text>
             <TouchableOpacity
               id="btn-edit-system-cost"
               style={styles.editPill}
@@ -158,7 +203,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
           <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>RECOVERED</Text>
             <Text style={[styles.metricVal, { color: COLORS.success }]}>
-              ₹{(payback.recoveredSoFarInr / 1000).toFixed(0)}k
+              {formatInrCompact(payback.recoveredSoFarInr)}
             </Text>
             <Text style={styles.metricSub}>{payback.recoveryPct}% recovered</Text>
           </View>
@@ -168,7 +213,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
           <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>ANNUAL SAVINGS</Text>
             <Text style={[styles.metricVal, { color: COLORS.gold }]}>
-              ₹{(payback.annualProjectedSavingsInr / 1000).toFixed(0)}k
+              {formatInrCompact(payback.annualProjectedSavingsInr)}
             </Text>
             <Text style={styles.metricSub}>~₹{Math.round(payback.monthlyAverageSavingsInr).toLocaleString('en-IN')}/mo</Text>
           </View>
@@ -201,7 +246,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
             <View style={styles.impactCol}>
               <Text style={styles.impactLabel}>EST. SOLAR SAVINGS</Text>
               <Text style={[styles.impactVal, { color: COLORS.success }]}>
-                ₹{annual.estimatedAvoidedCostInr.toFixed(0)}
+                ₹{Math.round(annual.estimatedAvoidedCostInr).toLocaleString('en-IN')}
               </Text>
               <Text style={styles.impactSub}>Avoided LTDS-II cost</Text>
             </View>
@@ -209,7 +254,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
             <View style={styles.impactCol}>
               <Text style={styles.impactLabel}>TOTAL BILLS PAID</Text>
               <Text style={[styles.impactVal, { color: COLORS.text }]}>
-                ₹{annual.totalBillsPaid.toFixed(0)}
+                ₹{Math.round(annual.totalBillsPaid).toLocaleString('en-IN')}
               </Text>
               <Text style={styles.impactSub}>Fixed charges, duties</Text>
             </View>
@@ -278,7 +323,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                   {row.closingCreditKwh}
                 </Text>
                 <Text style={[styles.td, { flex: 1.2, textAlign: 'right', fontWeight: FONT.bold }]}>
-                  ₹{row.billAmount.toFixed(0)}
+                  ₹{Math.round(row.billAmount).toLocaleString('en-IN')}
                 </Text>
               </View>
               {row.avgGenerationPerDay !== null && (

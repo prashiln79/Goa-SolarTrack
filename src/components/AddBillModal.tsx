@@ -25,6 +25,7 @@ import { SolarBill, SystemProfile } from '../types/solar';
 import { calculateEnergyAccounting } from '../domain/energyAccounting';
 import { parseBillPdf, extractTextFromPdfContent, parseGoaBillText } from '../services/billPdfParser';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
+import { DateField } from './ui/DatePickerModal';
 
 interface AddBillModalProps {
   visible: boolean;
@@ -1413,8 +1414,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                         placeholder="17000216006"
                         style={{ flex: 1 }}
                       />
-                      <Field
-                        label="Due Date (YYYY-MM-DD)"
+                      <DateField
+                        label="Due Date"
                         value={dueDate}
                         onChange={setDueDate}
                         placeholder="2026-10-15"
@@ -1461,14 +1462,14 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     </View>
 
                     <View style={styles.row}>
-                      <Field
+                      <DateField
                         label="Custom Start Date"
                         value={customStart}
                         onChange={setCustomStart}
                         placeholder={derivedDates.start}
                         style={{ flex: 1 }}
                       />
-                      <Field
+                      <DateField
                         label="Custom End Date"
                         value={customEnd}
                         onChange={setCustomEnd}

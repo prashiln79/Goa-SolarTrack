@@ -77,28 +77,44 @@ export function buildMonthlyAnalytics(
  * Builds annual aggregate analytics.
  * PRD §13.2 — annual report metrics.
  */
+/**
+ * Builds annual aggregate analytics.
+ * PRD §13.2 — annual report metrics.
+ */
 export function buildAnnualAnalytics(
   bills: SolarBill[],
   systemCapacityKw: number,
   cleaningEventCount: number
 ): AnnualAnalytics {
   const totalGenerationKwh = bills.reduce((s, b) => s + (b.generationKwh ?? 0), 0);
-  const totalImportKwh = bills.reduce((s, b) => s + b.importKwh, 0);
-  const totalExportKwh = bills.reduce((s, b) => s + b.exportKwh, 0);
+  const totalImportKwh = bills.reduce((s, b) => s + (b.importKwh ?? 0), 0);
+  const totalExportKwh = bills.reduce((s, b) => s + (b.exportKwh ?? 0), 0);
   const totalDirectUseKwh = bills.reduce((s, b) => s + (b.directSolarUseKwh ?? 0), 0);
-  const totalBillsPaid = bills.reduce((s, b) => s + b.billAmount, 0);
+  const totalBillsPaid = bills.reduce((s, b) => s + (b.billAmount ?? 0), 0);
   const closingCreditKwh =
     bills.length > 0
-      ? bills.reduce((latest, b) =>
-          new Date(b.periodEnd) > new Date(latest.periodEnd) ? b : latest
-        ).closingCreditKwh
+      ? bills.reduce((latest, b) => {
+          const bTime = new Date(b.periodEnd).getTime();
+          const latestTime = new Date(latest.periodEnd).getTime();
+          return !isNaN(bTime) && bTime > latestTime ? b : latest;
+        }).closingCreditKwh
       : 0;
 
-  // Estimated avoided cost: sum of per-bill savings estimates
+  // Estimated avoided cost: sum of per-bill savings estimates.
+  // Reconstructs bill without solar. If estimatedTotalConsumptionKwh is null
+  // (e.g. inverter generation not entered), fall back to grid import plus any direct use.
   const estimatedAvoidedCostInr = bills.reduce((s, b) => {
-    if (b.estimatedTotalConsumptionKwh === null) return s;
+    const consumptionKwh =
+      b.estimatedTotalConsumptionKwh !== null &&
+      b.estimatedTotalConsumptionKwh !== undefined &&
+      b.estimatedTotalConsumptionKwh > 0
+        ? b.estimatedTotalConsumptionKwh
+        : (b.directSolarUseKwh ?? 0) + (b.importKwh ?? 0);
+
+    if (consumptionKwh <= 0 && (!b.exportKwh || b.exportKwh <= 0)) return s;
+
     const { estimatedSavingsInr } = estimateRetailBill(
-      b.estimatedTotalConsumptionKwh,
+      consumptionKwh,
       b.billAmount,
       systemCapacityKw,
       undefined,
@@ -137,73 +153,77 @@ export function calculatePaybackAnalysis(
   annual: AnnualAnalytics
 ): PaybackAnalysis {
   const capacityKw = profile.capacityKw && profile.capacityKw > 0 ? profile.capacityKw : 5.0;
-  // If user provided a systemCostInr, use it. Otherwise use realistic benchmark: ₹55,000 / kW
-  const benchmarkCost = Math.round(capacityKw * 55000);
+  // If user provided a systemCostInr, use it. Otherwise use realistic benchmark: ₹55,000 / kW (minimum ₹2,00,000)
+  const benchmarkCost = Math.max(200000, Math.round(capacityKw * 55000));
+  
+  // Normalize system cost:
+  // If user entered e.g. 3 or 3.5 (meaning 3 Lakhs), auto-scale <= 100 to Lakhs (* 100,000).
+  let systemCostInr: number;
+  const rawCost = profile.systemCostInr;
+  if (rawCost && rawCost > 0) {
+    if (rawCost <= 100) {
+      // User entered in Lakhs (e.g. 3 for 3 Lac)
+      systemCostInr = Math.round(rawCost * 100000);
+    } else {
+      systemCostInr = Math.round(rawCost);
+    }
+  } else {
+    systemCostInr = benchmarkCost;
+  }
   const isBenchmarkCost = !profile.systemCostInr || profile.systemCostInr <= 0;
-  const systemCostInr = profile.systemCostInr && profile.systemCostInr > 0 ? profile.systemCostInr : benchmarkCost;
 
   // Monthly average savings calculation
-  const billsWithSavings = bills.filter(b => b.estimatedTotalConsumptionKwh !== null);
+  // Goa benchmark monthly savings (~4.0 kWh/kW/day, ~30.4 days, ~₹4.50/kWh average LTDS-II retail slab)
+  const benchmarkMonthlySavings = round2(capacityKw * 4.0 * 30.4 * 4.5);
+
   let monthlyAverageSavingsInr: number;
-
-  if (billsWithSavings.length > 0 && annual.estimatedAvoidedCostInr > 0) {
-    monthlyAverageSavingsInr = round2(annual.estimatedAvoidedCostInr / billsWithSavings.length);
+  if (bills.length > 0 && annual.estimatedAvoidedCostInr > 0) {
+    monthlyAverageSavingsInr = round2(annual.estimatedAvoidedCostInr / bills.length);
   } else {
-    // Goa solar benchmark: ~4.0 kWh / kW / day, ~30.4 days, retail tariff ~₹4.50/kWh
-    monthlyAverageSavingsInr = round2(capacityKw * 4.0 * 30.4 * 4.5);
+    monthlyAverageSavingsInr = benchmarkMonthlySavings;
   }
 
-  const annualProjectedSavingsInr = round2(monthlyAverageSavingsInr * 12);
+  // Effective monthly savings used for projecting future break-even
+  const effectiveMonthlySavings = monthlyAverageSavingsInr > 0 ? monthlyAverageSavingsInr : benchmarkMonthlySavings;
+  const annualProjectedSavingsInr = round2(effectiveMonthlySavings * 12);
 
-  // Time elapsed since installation
-  let installDate: Date;
-  try {
-    installDate = profile.installationDate ? new Date(profile.installationDate) : new Date();
-    if (isNaN(installDate.getTime())) installDate = new Date();
-  } catch {
-    installDate = new Date();
-  }
+  // Recovered so far: represents actual avoided electricity costs from logged bills.
+  // If no bills are logged yet, recovered amount is 0.
+  const recoveredSoFarInr = bills.length > 0
+    ? round2(Math.min(systemCostInr * 1.5, Math.max(0, annual.estimatedAvoidedCostInr)))
+    : 0;
 
-  const now = new Date();
-  const monthsSinceInstall = Math.max(
-    1,
-    (now.getFullYear() - installDate.getFullYear()) * 12 + (now.getMonth() - installDate.getMonth())
-  );
-
-  // Recovered so far: use actual avoided cost from bills or projected elapsed savings
-  const recoveredSoFarInr = round2(
-    Math.min(
-      systemCostInr * 1.5,
-      Math.max(annual.estimatedAvoidedCostInr, monthlyAverageSavingsInr * monthsSinceInstall)
-    )
-  );
-
-  const recoveryPct = Math.min(100, Math.round((recoveredSoFarInr / systemCostInr) * 100));
+  const recoveryPct = systemCostInr > 0
+    ? Math.min(100, Math.round((recoveredSoFarInr / systemCostInr) * 100))
+    : 0;
   const remainingInr = Math.max(0, round2(systemCostInr - recoveredSoFarInr));
-  const isFullyRecovered = remainingInr <= 0;
+  const isFullyRecovered = systemCostInr > 0 && recoveredSoFarInr >= systemCostInr && remainingInr <= 0;
 
-  // Payback duration
+  // Payback duration in total years
   const paybackYearsTotal = annualProjectedSavingsInr > 0
     ? round2(systemCostInr / annualProjectedSavingsInr)
     : 0;
 
   const remainingMonths = isFullyRecovered
     ? 0
-    : monthlyAverageSavingsInr > 0
-      ? Math.ceil(remainingInr / monthlyAverageSavingsInr)
+    : effectiveMonthlySavings > 0
+      ? Math.ceil(remainingInr / effectiveMonthlySavings)
       : 0;
 
   // Break-even target calendar date
   let breakEvenDate: string;
   if (isFullyRecovered) {
     breakEvenDate = 'Recovered (Free Electricity!)';
-  } else {
+  } else if (remainingMonths > 0) {
+    const now = new Date();
     const targetDate = new Date(now.getFullYear(), now.getMonth() + remainingMonths, 1);
     const monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     breakEvenDate = `${monthNames[targetDate.getMonth()]} ${targetDate.getFullYear()}`;
+  } else {
+    breakEvenDate = 'Target Pending';
   }
 
   // Formatted remaining time

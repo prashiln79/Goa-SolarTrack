@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { CleaningEvent } from '../types/solar';
 import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
+import { DateField } from './ui/DatePickerModal';
 
 interface AddCleaningModalProps {
   visible: boolean;
@@ -82,13 +83,13 @@ export const AddCleaningModal: React.FC<AddCleaningModalProps> = ({
 
             <Text style={styles.section}>CLEANING DETAILS</Text>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Date (YYYY-MM-DD) *</Text>
-              <TextInput
-                style={styles.input} value={date} onChangeText={setDate}
-                placeholder={today} placeholderTextColor={COLORS.textMuted}
-              />
-            </View>
+            <DateField
+              label="Date"
+              value={date}
+              onChange={setDate}
+              placeholder={today}
+              required
+            />
 
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Service Provider / Method</Text>
