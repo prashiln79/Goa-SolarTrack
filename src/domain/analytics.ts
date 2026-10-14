@@ -100,7 +100,12 @@ export function buildAnnualAnalytics(
     const { estimatedSavingsInr } = estimateRetailBill(
       b.estimatedTotalConsumptionKwh,
       b.billAmount,
-      systemCapacityKw
+      systemCapacityKw,
+      undefined,
+      {
+        actualDemandCharges: b.demandCharges,
+        fppca: b.fppca,
+      }
     );
     return s + estimatedSavingsInr;
   }, 0);

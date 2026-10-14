@@ -93,26 +93,51 @@ export interface BillEstimate {
   note: string;
 }
 
+export interface BillEstimateOptions {
+  actualDemandCharges?: number;
+  fppca?: number;
+  electricityDutyRate?: number;    // Goa Electricity Duty: ₹0.20/kWh
+  publicLightingDutyRate?: number; // Goa Public Lighting Duty: ₹0.05/kWh
+}
+
 /**
  * Estimates the retail equivalent bill (without solar credits).
  * PRD §7.2: "The actual bill amount is authoritative. The app may provide
  * an estimated 'retail-equivalent value' but such values must be labelled as estimates."
+ *
+ * Fully reconstructs the bill without solar by including:
+ * 1. Telescopic LTDS-II energy charges on total home consumption
+ * 2. Sanctioned load / demand fixed charges
+ * 3. Goa Electricity Duty (@ ₹0.20/kWh) + Public Lighting Duty (@ ₹0.05/kWh)
+ * 4. Applicable Fuel & Power Purchase Cost Adjustment (FPPCA)
  */
 export function estimateRetailBill(
   estimatedTotalConsumptionKwh: number,
   actualBillAmount: number,
   capacityKw: number,
-  tariffVersion: TariffVersion = LTDS_II_FY2026_27
+  tariffVersion: TariffVersion = LTDS_II_FY2026_27,
+  options?: BillEstimateOptions
 ): BillEstimate {
   const energyChargeInr = calculateTelescopicEnergyCharge(
     estimatedTotalConsumptionKwh,
     tariffVersion.slabs
   );
-  const fixedChargeInr = calculateFixedCharge(
-    capacityKw,
-    tariffVersion.fixedChargePerKwPerMonth
-  );
-  const totalEstimatedRetailInr = round2(energyChargeInr + fixedChargeInr);
+
+  // Use actual billed demand charges if available (e.g. ₹223.46 for 8.65kW),
+  // otherwise fallback to capacity-based fixed charge
+  const fixedChargeInr =
+    options?.actualDemandCharges !== undefined && !isNaN(options.actualDemandCharges)
+      ? round2(options.actualDemandCharges)
+      : calculateFixedCharge(capacityKw, tariffVersion.fixedChargePerKwPerMonth);
+
+  // Goa Electricity Duty (@ ₹0.20/kWh) + Public Lighting Duty (@ ₹0.05/kWh) = ₹0.25/kWh
+  const dutyRate = (options?.electricityDutyRate ?? 0.20) + (options?.publicLightingDutyRate ?? 0.05);
+  const dutyInr = round2(estimatedTotalConsumptionKwh * dutyRate);
+
+  // FPPCA (Fuel and Power Purchase Cost Adjustment)
+  const fppcaInr = options?.fppca !== undefined && !isNaN(options.fppca) ? round2(options.fppca) : 0;
+
+  const totalEstimatedRetailInr = round2(energyChargeInr + fixedChargeInr + dutyInr + fppcaInr);
   const estimatedSavingsInr = round2(
     Math.max(0, totalEstimatedRetailInr - actualBillAmount)
   );
@@ -122,7 +147,7 @@ export function estimateRetailBill(
     fixedChargeInr,
     totalEstimatedRetailInr,
     estimatedSavingsInr,
-    note: 'Estimated retail equivalent using LTDS-II telescopic slabs + fixed charge. Excludes FPPCA, duties and other charges. Labelled as estimate per PRD §7.2.',
+    note: 'Estimated retail equivalent using Goa LTDS-II telescopic slabs, fixed demand charge, electricity duties (@ ₹0.25/kWh), and FPPCA. Authoritative bill rule per PRD §7.2.',
   };
 }
 

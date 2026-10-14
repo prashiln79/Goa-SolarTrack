@@ -33,7 +33,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ bills, profile, careAsse
 	const days = bill.billingDays || 31;
 	const avgPerDay = bill.generationKwh !== null ? (bill.generationKwh / days).toFixed(1) : null;
 
-	const retailEstimate = bill.estimatedTotalConsumptionKwh !== null ? estimateRetailBill(bill.estimatedTotalConsumptionKwh, bill.billAmount, profile.capacityKw) : null;
+	const retailEstimate =
+		bill.estimatedTotalConsumptionKwh !== null
+			? estimateRetailBill(
+					bill.estimatedTotalConsumptionKwh,
+					bill.billAmount,
+					profile.capacityKw,
+					undefined,
+					{
+						actualDemandCharges: bill.demandCharges,
+						fppca: bill.fppca,
+					}
+			  )
+			: null;
 
 	const settlement = profile.settlementRateInr ? projectSettlement(bill.closingCreditKwh, profile.settlementRateInr, "FY 2026-27 (1 Apr – 31 Mar)", "31 May 2027") : null;
 
@@ -186,7 +198,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ bills, profile, careAsse
 	const allTimeTotalBill = bills.reduce((sum, b) => sum + b.billAmount, 0);
 	const allTimeTotalSavings = bills.reduce((sum, b) => {
 		if (b.estimatedTotalConsumptionKwh === null) return sum;
-		const est = estimateRetailBill(b.estimatedTotalConsumptionKwh, b.billAmount, profile.capacityKw);
+		const est = estimateRetailBill(
+			b.estimatedTotalConsumptionKwh,
+			b.billAmount,
+			profile.capacityKw,
+			undefined,
+			{
+				actualDemandCharges: b.demandCharges,
+				fppca: b.fppca,
+			}
+		);
 		return sum + est.estimatedSavingsInr;
 	}, 0);
 	const hasSavingsData = bills.some((b) => b.estimatedTotalConsumptionKwh !== null);

@@ -199,6 +199,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   const [saveError, setSaveError]         = useState<string | null>(null);
 
   // ── Core fields ──
+  const [entryMode, setEntryMode]               = useState<'bill' | 'simple'>('bill');
   const [importKwh, setImportKwh]               = useState('');
   const [exportKwh, setExportKwh]               = useState('');
   const [billAmount, setBillAmount]             = useState('');
@@ -798,129 +799,697 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
               )}
             </View>
 
-            {/* ── 3. PREVIOUS ENERGY BANK BANNER ── */}
-            <View style={styles.bankBanner}>
-              <View style={styles.bankLeft}>
-                <Ionicons name="wallet-outline" size={18} color={COLORS.bank} />
-                <View>
-                  <Text style={styles.bankTitle}>Energy Bank Opening Balance</Text>
-                  <Text style={styles.bankSub}>Carried forward from previous month</Text>
-                </View>
-              </View>
-              <View style={styles.bankRight}>
-                <TextInput
-                  id="input-opening-credit"
-                  style={styles.bankInput}
-                  value={openingCredit}
-                  onChangeText={setOpeningCredit}
-                  keyboardType="numeric"
-                  placeholder="0"
-                  placeholderTextColor={COLORS.textMuted}
+            {/* ── ENTRY MODE SELECTOR ── */}
+            <View style={styles.entryModeBar}>
+              <TouchableOpacity
+                id="btn-entry-mode-bill"
+                style={[styles.entryModeTab, entryMode === 'bill' && styles.entryModeTabActive]}
+                onPress={() => setEntryMode('bill')}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="receipt"
+                  size={16}
+                  color={entryMode === 'bill' ? COLORS.gold : COLORS.textMuted}
                 />
-                <Text style={styles.bankUnit}>kWh</Text>
-              </View>
+                <Text
+                  style={[
+                    styles.entryModeTabText,
+                    entryMode === 'bill' && styles.entryModeTabTextActive,
+                  ]}
+                >
+                  Official Bill View (EDG)
+                </Text>
+                <View style={styles.easyBadge}>
+                  <Text style={styles.easyBadgeText}>Match Bill</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                id="btn-entry-mode-simple"
+                style={[styles.entryModeTab, entryMode === 'simple' && styles.entryModeTabActive]}
+                onPress={() => setEntryMode('simple')}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="grid-outline"
+                  size={16}
+                  color={entryMode === 'simple' ? COLORS.gold : COLORS.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.entryModeTabText,
+                    entryMode === 'simple' && styles.entryModeTabTextActive,
+                  ]}
+                >
+                  Quick Cards
+                </Text>
+              </TouchableOpacity>
             </View>
 
-            {/* ── 4. THREE CORE INPUTS ── */}
-            <Text style={styles.sectionHeader}>METER READINGS & BILL AMOUNT</Text>
+            {/* ══════════════════════════════════════════════════════════
+                MODE A: OFFICIAL GOA ELECTRICITY DEPARTMENT BILL VIEW
+               ══════════════════════════════════════════════════════════ */}
+            {entryMode === 'bill' ? (
+              <View style={styles.edgBillContainer}>
+                {/* Perforation / tear-off dashed marker */}
+                <View style={styles.cutLineRow}>
+                  <Ionicons name="cut-outline" size={12} color={COLORS.textMuted} />
+                  <View style={styles.cutLineDashes} />
+                  <Text style={styles.cutLineText}>GOA ELECTRICITY DEPARTMENT BILL</Text>
+                  <View style={styles.cutLineDashes} />
+                  <Ionicons name="cut-outline" size={12} color={COLORS.textMuted} />
+                </View>
 
-            <View style={styles.coreGrid}>
-              {/* Grid Import */}
-              <View style={styles.coreCard}>
-                <View style={styles.coreCardTop}>
-                  <Ionicons name="arrow-down-circle" size={18} color={COLORS.import} />
-                  <Text style={styles.coreLabel}>
-                    Grid Import <Text style={styles.req}>*</Text>
+                {/* Bill Header */}
+                <View style={styles.edgHeader}>
+                  <View style={styles.edgHeaderTitles}>
+                    <Text style={styles.edgGovTitle}>ELECTRICITY DEPARTMENT - GOVERNMENT OF GOA</Text>
+                    <Text style={styles.edgSubTitle}>
+                      {profile?.consumerNumber
+                        ? `Div 10 : Ponda • CA: ${profile.consumerNumber}`
+                        : 'Ponda Sub Division • Solar Net-Metering Bill'}
+                    </Text>
+                  </View>
+                  <View style={styles.edgHelplineBadge}>
+                    <Text style={styles.edgHelplineLabel}>Help Line</Text>
+                    <Text style={styles.edgHelplineNumber}>1912</Text>
+                  </View>
+                </View>
+
+                {/* Bill Metadata Grid */}
+                <View style={styles.edgMetaGrid}>
+                  <View style={styles.edgMetaCol}>
+                    <Text style={styles.edgMetaLabel}>Bill Number</Text>
+                    <TextInput
+                      id="input-edg-bill-number"
+                      style={styles.edgMetaInput}
+                      value={billNumber}
+                      onChangeText={setBillNumber}
+                      placeholder="e.g. 17000216006"
+                      placeholderTextColor={COLORS.textMuted}
+                    />
+                  </View>
+                  <View style={styles.edgMetaCol}>
+                    <Text style={styles.edgMetaLabel}>Bill Date</Text>
+                    <TextInput
+                      id="input-edg-bill-date"
+                      style={styles.edgMetaInput}
+                      value={customEnd}
+                      onChangeText={setCustomEnd}
+                      placeholder={derivedDates.end}
+                      placeholderTextColor={COLORS.textMuted}
+                    />
+                  </View>
+                  <View style={styles.edgMetaCol}>
+                    <Text style={styles.edgMetaLabel}>Due Date</Text>
+                    <TextInput
+                      id="input-edg-due-date"
+                      style={styles.edgMetaInput}
+                      value={dueDate}
+                      onChangeText={setDueDate}
+                      placeholder="e.g. 09/09/2026"
+                      placeholderTextColor={COLORS.textMuted}
+                    />
+                  </View>
+                  <View style={styles.edgMetaCol}>
+                    <Text style={styles.edgMetaLabel}>Billing Days</Text>
+                    <TextInput
+                      id="input-edg-billing-days"
+                      style={styles.edgMetaInput}
+                      value={customDays}
+                      onChangeText={setCustomDays}
+                      placeholder={String(derivedDates.daysInMonth)}
+                      placeholderTextColor={COLORS.textMuted}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                {/* Helpful Instruction Banner */}
+                <View style={styles.edgGuideBanner}>
+                  <Ionicons name="information-circle" size={15} color={COLORS.import} />
+                  <Text style={styles.edgGuideText}>
+                    Simply match each section below to the corresponding row printed on your physical or PDF bill.
                   </Text>
                 </View>
-                <View style={styles.inputBox}>
-                  <TextInput
-                    id="input-grid-import"
-                    style={styles.coreInput}
-                    value={importKwh}
-                    onChangeText={setImportKwh}
-                    placeholder="e.g. 240"
-                    placeholderTextColor={COLORS.textMuted}
-                    keyboardType="numeric"
+
+                {/* ── 1. EXPORT KWH (NET-METERING SOLAR BANK ROW) ── */}
+                <View style={styles.edgSection}>
+                  <View style={styles.edgSectionHeader}>
+                    <Text style={styles.edgSectionTitle}>Export KWH (Net-Metering Solar Bank)</Text>
+                    <Text style={styles.edgSectionTag}>Matches solar banking row</Text>
+                  </View>
+
+                  <View style={styles.edgBankStrip}>
+                    {/* Prev.Balance */}
+                    <View style={styles.edgBankItem}>
+                      <View style={styles.edgBankLabelRow}>
+                        <Text style={styles.edgBankLabel}>Prev.Balance</Text>
+                        <Text style={styles.edgBankSub}>Opening Bank</Text>
+                      </View>
+                      <View style={styles.edgBankInputWrap}>
+                        <TextInput
+                          id="input-edg-prev-balance"
+                          style={styles.edgBankInput}
+                          value={openingCredit}
+                          onChangeText={setOpeningCredit}
+                          placeholder="0"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.edgUnitSmall}>kWh</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.edgMathSign}>+</Text>
+
+                    {/* Curr.Period (Grid Export) */}
+                    <View style={styles.edgBankItem}>
+                      <View style={styles.edgBankLabelRow}>
+                        <Text style={styles.edgBankLabel}>Curr.Period</Text>
+                        <Text style={styles.edgBankSub}>KWH_E Export</Text>
+                      </View>
+                      <View style={styles.edgBankInputWrap}>
+                        <TextInput
+                          id="input-edg-curr-period"
+                          style={styles.edgBankInput}
+                          value={exportKwh}
+                          onChangeText={setExportKwh}
+                          placeholder="0"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.edgUnitSmall}>kWh</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.edgMathSign}>−</Text>
+
+                    {/* Adjusted (Offset) */}
+                    <View style={[styles.edgBankItem, styles.edgBankItemComputed]}>
+                      <View style={styles.edgBankLabelRow}>
+                        <Text style={styles.edgBankLabel}>Adjusted</Text>
+                        <Text style={styles.edgBankSub}>Offset Import</Text>
+                      </View>
+                      <View style={styles.edgBankInputWrap}>
+                        <Text style={styles.edgBankStaticText}>
+                          {liveCalc.adjustedCreditKwh}
+                        </Text>
+                        <Text style={styles.edgUnitSmall}>kWh</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.edgMathSign}>=</Text>
+
+                    {/* Carried over (Closing Bank) */}
+                    <View style={[styles.edgBankItem, styles.edgBankItemClosing]}>
+                      <View style={styles.edgBankLabelRow}>
+                        <Text style={[styles.edgBankLabel, { color: COLORS.bank }]}>Carried over</Text>
+                        <Text style={styles.edgBankSub}>Next Month</Text>
+                      </View>
+                      <View style={styles.edgBankInputWrap}>
+                        <Text style={[styles.edgBankStaticText, { color: COLORS.bank, fontWeight: FONT.bold }]}>
+                          {liveCalc.closingCreditKwh}
+                        </Text>
+                        <Text style={styles.edgUnitSmall}>kWh</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                {/* ── 2. METER READINGS TABLE ── */}
+                <View style={styles.edgSection}>
+                  <View style={styles.edgSectionHeader}>
+                    <Text style={styles.edgSectionTitle}>Meter Readings Table</Text>
+                    <Text style={styles.edgSectionTag}>Matches readings table on bill</Text>
+                  </View>
+
+                  <View style={styles.edgTable}>
+                    {/* Table Header */}
+                    <View style={styles.edgTableHeader}>
+                      <Text style={[styles.edgTh, { width: 56 }]}>Unit</Text>
+                      <Text style={[styles.edgTh, { flex: 1 }]}>What this means on your bill</Text>
+                      <Text style={[styles.edgTh, { width: 100, textAlign: 'right' }]}>Consumption *</Text>
+                    </View>
+
+                    {/* Row 1: KWH_I (Grid Import) */}
+                    <View style={[styles.edgTableRow, styles.edgTableRowHighlight]}>
+                      <View style={{ width: 56 }}>
+                        <View style={[styles.edgUnitBadge, { backgroundColor: `${COLORS.import}18`, borderColor: `${COLORS.import}44` }]}>
+                          <Text style={[styles.edgUnitBadgeText, { color: COLORS.import }]}>KWH_I</Text>
+                        </View>
+                      </View>
+                      <View style={{ flex: 1, paddingRight: 6 }}>
+                        <Text style={styles.edgRowTitle}>Grid Import</Text>
+                        <Text style={styles.edgRowSub}>Units drawn from electricity grid</Text>
+                      </View>
+                      <View style={styles.edgInputCell}>
+                        <TextInput
+                          id="input-edg-import-kwh"
+                          style={[styles.edgTableInput, !importKwh && styles.edgInputPending]}
+                          value={importKwh}
+                          onChangeText={setImportKwh}
+                          placeholder="e.g. 241"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.edgUnitLabel}>kWh</Text>
+                      </View>
+                    </View>
+
+                    {/* Row 2: KWH_E (Grid Export) */}
+                    <View style={[styles.edgTableRow, styles.edgTableRowHighlight]}>
+                      <View style={{ width: 56 }}>
+                        <View style={[styles.edgUnitBadge, { backgroundColor: `${COLORS.export}18`, borderColor: `${COLORS.export}44` }]}>
+                          <Text style={[styles.edgUnitBadgeText, { color: COLORS.export }]}>KWH_E</Text>
+                        </View>
+                      </View>
+                      <View style={{ flex: 1, paddingRight: 6 }}>
+                        <Text style={styles.edgRowTitle}>Grid Export</Text>
+                        <Text style={styles.edgRowSub}>Solar power sent into grid</Text>
+                      </View>
+                      <View style={styles.edgInputCell}>
+                        <TextInput
+                          id="input-edg-export-kwh"
+                          style={[styles.edgTableInput, !exportKwh && styles.edgInputPending]}
+                          value={exportKwh}
+                          onChangeText={setExportKwh}
+                          placeholder="e.g. 331"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.edgUnitLabel}>kWh</Text>
+                      </View>
+                    </View>
+
+                    {/* Row 3: KWH_G (Solar Generation) */}
+                    <View style={styles.edgTableRow}>
+                      <View style={{ width: 56 }}>
+                        <View style={[styles.edgUnitBadge, { backgroundColor: `${COLORS.generation}18`, borderColor: `${COLORS.generation}44` }]}>
+                          <Text style={[styles.edgUnitBadgeText, { color: COLORS.generation }]}>KWH_G</Text>
+                        </View>
+                      </View>
+                      <View style={{ flex: 1, paddingRight: 6 }}>
+                        <Text style={styles.edgRowTitle}>Solar Generation</Text>
+                        <Text style={styles.edgRowSub}>Inverter output (Optional)</Text>
+                      </View>
+                      <View style={styles.edgInputCell}>
+                        <TextInput
+                          id="input-edg-gen-kwh"
+                          style={styles.edgTableInput}
+                          value={generationKwh}
+                          onChangeText={setGenerationKwh}
+                          placeholder="e.g. 431"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.edgUnitLabel}>kWh</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                {/* ── 3. BILL SUMMARY (AMOUNT PAYABLE) ── */}
+                <View style={styles.edgSection}>
+                  <View style={styles.edgSectionHeader}>
+                    <Text style={styles.edgSectionTitle} numberOfLines={1}>
+                      Bill Summary : Note- E-BILL
+                    </Text>
+                    <Text style={styles.edgSectionTag}>Matches payment box</Text>
+                  </View>
+
+                  {/* Summary row matching the official bill table */}
+                  <View style={styles.edgSummaryMiniRow}>
+                    <View style={styles.edgSummaryMiniCell}>
+                      <Text style={styles.edgSummaryMiniLabel}>Arrears (A)</Text>
+                      <Text style={styles.edgSummaryMiniVal}>₹ 0.00</Text>
+                    </View>
+                    <View style={styles.edgSummaryMiniCell}>
+                      <Text style={styles.edgSummaryMiniLabel}>Delay Chg (C)</Text>
+                      <Text style={styles.edgSummaryMiniVal}>₹ 0.00</Text>
+                    </View>
+                    <View style={[styles.edgSummaryMiniCell, { borderRightWidth: 0 }]}>
+                      <Text style={styles.edgSummaryMiniLabel}>Present (D)</Text>
+                      <Text style={styles.edgSummaryMiniVal}>
+                        {billAmount ? `₹ ${billAmount}` : '₹ 0.00'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Main Amount Payable Box (Full-width responsive, no horizontal squeezing) */}
+                  <View style={styles.edgPayableCard}>
+                    <View style={styles.edgPayableTopRow}>
+                      <View style={{ flex: 1, paddingRight: 6 }}>
+                        <Text style={styles.edgPayableLabel}>
+                          Amount Payable on or before due date <Text style={styles.req}>*</Text>
+                        </Text>
+                        <Text style={styles.edgPayableFormula}>
+                          Total Current Demand (A + B + C + D + E)
+                        </Text>
+                      </View>
+                      {dueDate ? (
+                        <View style={styles.edgDueBadge}>
+                          <Text style={styles.edgDueBadgeText}>Due: {dueDate}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.edgPayableInputRow}>
+                      <Text style={styles.edgRupeeSymbol}>₹</Text>
+                      <TextInput
+                        id="input-edg-bill-amount"
+                        style={[styles.edgPayableInput, !billAmount && styles.edgInputPending]}
+                        value={billAmount}
+                        onChangeText={setBillAmount}
+                        placeholder="0.00"
+                        placeholderTextColor={COLORS.textMuted}
+                        keyboardType="numeric"
+                      />
+                    </View>
+
+                    <Text style={styles.edgPayableHint}>
+                      📍 Look for the large total printed under &quot;Amount Payable on or before due date&quot;
+                    </Text>
+                  </View>
+                </View>
+
+                {/* ── 4. PRESENT BILL CHARGES (OPTIONAL BREAKDOWN) ── */}
+                <TouchableOpacity
+                  id="btn-toggle-edg-charges"
+                  style={styles.edgChargesToggle}
+                  onPress={() => setShowDetails(!showDetails)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.edgChargesToggleLeft}>
+                    <Ionicons name="receipt-outline" size={15} color={COLORS.gold} />
+                    <Text style={styles.edgChargesToggleTitle}>
+                      Present Bill Charges Breakdown
+                    </Text>
+                    <Text style={styles.edgOptionalPill}>Optional</Text>
+                  </View>
+                  <Ionicons
+                    name={showDetails ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color={COLORS.textSub}
                   />
-                  <Text style={styles.unitText}>kWh</Text>
-                </View>
-                <Text style={styles.coreDesc}>Units drawn from grid</Text>
-              </View>
+                </TouchableOpacity>
 
-              {/* Grid Export */}
-              <View style={styles.coreCard}>
-                <View style={styles.coreCardTop}>
-                  <Ionicons name="arrow-up-circle" size={18} color={COLORS.export} />
-                  <Text style={styles.coreLabel}>
-                    Grid Export <Text style={styles.req}>*</Text>
-                  </Text>
+                {showDetails && (
+                  <View style={styles.edgChargesTable}>
+                    <View style={styles.edgChargesRow}>
+                      <Text style={styles.edgChargesParticular}>Demand / Fixed Charges</Text>
+                      <View style={styles.edgChargesInputWrap}>
+                        <Text style={styles.edgChargeRupee}>₹</Text>
+                        <TextInput
+                          id="input-edg-demand-charges"
+                          style={styles.edgChargesInput}
+                          value={demandCharges}
+                          onChangeText={setDemandCharges}
+                          placeholder="223.46"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="numeric"
+                        />
+                      </View>
+                    </View>
+
+                    <View style={styles.edgChargesRow}>
+                      <Text style={styles.edgChargesParticular}>Fuel & Power Cost Adjustment (FPPCA)</Text>
+                      <View style={styles.edgChargesInputWrap}>
+                        <Text style={styles.edgChargeRupee}>₹</Text>
+                        <TextInput
+                          id="input-edg-fppca"
+                          style={styles.edgChargesInput}
+                          value={fppca}
+                          onChangeText={setFppca}
+                          placeholder="42.98"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="numeric"
+                        />
+                      </View>
+                    </View>
+
+                    <View style={styles.edgChargesRow}>
+                      <Text style={styles.edgChargesParticular}>Advance / Prompt Payment Rebate</Text>
+                      <View style={styles.edgChargesInputWrap}>
+                        <Text style={styles.edgChargeRupee}>₹</Text>
+                        <TextInput
+                          id="input-edg-rebate"
+                          style={styles.edgChargesInput}
+                          value={rebate}
+                          onChangeText={setRebate}
+                          placeholder="-2.37"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="numeric"
+                        />
+                      </View>
+                    </View>
+
+                    <View style={[styles.edgChargesRow, { borderBottomWidth: 0 }]}>
+                      <Text style={styles.edgChargesParticular}>Notes / Remarks</Text>
+                      <TextInput
+                        id="input-edg-notes"
+                        style={styles.edgNotesInput}
+                        value={notes}
+                        onChangeText={setNotes}
+                        placeholder="Meter remarks, tariff notes…"
+                        placeholderTextColor={COLORS.textMuted}
+                      />
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              /* ══════════════════════════════════════════════════════════
+                  MODE B: QUICK CARDS VIEW (COMPACT)
+                 ══════════════════════════════════════════════════════════ */
+              <View>
+                {/* ── 3. PREVIOUS ENERGY BANK BANNER ── */}
+                <View style={styles.bankBanner}>
+                  <View style={styles.bankLeft}>
+                    <Ionicons name="wallet-outline" size={18} color={COLORS.bank} />
+                    <View>
+                      <Text style={styles.bankTitle}>Energy Bank Opening Balance</Text>
+                      <Text style={styles.bankSub}>Carried forward from previous month</Text>
+                    </View>
+                  </View>
+                  <View style={styles.bankRight}>
+                    <TextInput
+                      id="input-opening-credit"
+                      style={styles.bankInput}
+                      value={openingCredit}
+                      onChangeText={setOpeningCredit}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={COLORS.textMuted}
+                    />
+                    <Text style={styles.bankUnit}>kWh</Text>
+                  </View>
                 </View>
-                <View style={styles.inputBox}>
-                  <TextInput
-                    id="input-grid-export"
-                    style={styles.coreInput}
-                    value={exportKwh}
-                    onChangeText={setExportKwh}
-                    placeholder="e.g. 330"
-                    placeholderTextColor={COLORS.textMuted}
-                    keyboardType="numeric"
+
+                {/* ── 4. THREE CORE INPUTS ── */}
+                <Text style={styles.sectionHeader}>METER READINGS & BILL AMOUNT</Text>
+
+                <View style={styles.coreGrid}>
+                  {/* Grid Import */}
+                  <View style={styles.coreCard}>
+                    <View style={styles.coreCardTop}>
+                      <Ionicons name="arrow-down-circle" size={18} color={COLORS.import} />
+                      <Text style={styles.coreLabel}>
+                        Grid Import <Text style={styles.req}>*</Text>
+                      </Text>
+                    </View>
+                    <View style={styles.inputBox}>
+                      <TextInput
+                        id="input-grid-import"
+                        style={styles.coreInput}
+                        value={importKwh}
+                        onChangeText={setImportKwh}
+                        placeholder="e.g. 240"
+                        placeholderTextColor={COLORS.textMuted}
+                        keyboardType="numeric"
+                      />
+                      <Text style={styles.unitText}>kWh</Text>
+                    </View>
+                    <Text style={styles.coreDesc}>Units drawn from grid</Text>
+                  </View>
+
+                  {/* Grid Export */}
+                  <View style={styles.coreCard}>
+                    <View style={styles.coreCardTop}>
+                      <Ionicons name="arrow-up-circle" size={18} color={COLORS.export} />
+                      <Text style={styles.coreLabel}>
+                        Grid Export <Text style={styles.req}>*</Text>
+                      </Text>
+                    </View>
+                    <View style={styles.inputBox}>
+                      <TextInput
+                        id="input-grid-export"
+                        style={styles.coreInput}
+                        value={exportKwh}
+                        onChangeText={setExportKwh}
+                        placeholder="e.g. 330"
+                        placeholderTextColor={COLORS.textMuted}
+                        keyboardType="numeric"
+                      />
+                      <Text style={styles.unitText}>kWh</Text>
+                    </View>
+                    <Text style={styles.coreDesc}>Solar sent to grid</Text>
+                  </View>
+                </View>
+
+                {/* Total Payable Bill Amount */}
+                <View style={styles.amountCard}>
+                  <View style={styles.amountTop}>
+                    <Ionicons name="cash-outline" size={20} color={COLORS.gold} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.amountLabel}>
+                        Total Bill Amount <Text style={styles.req}>*</Text>
+                      </Text>
+                      <Text style={styles.amountDesc}>Payable amount printed on EDG bill</Text>
+                    </View>
+                  </View>
+                  <View style={styles.amountInputRow}>
+                    <Text style={styles.rupeeSign}>₹</Text>
+                    <TextInput
+                      id="input-bill-amount"
+                      style={styles.amountInput}
+                      value={billAmount}
+                      onChangeText={setBillAmount}
+                      placeholder="0.00"
+                      placeholderTextColor={COLORS.textMuted}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                {/* Optional Solar Generation */}
+                <View style={styles.optionalCard}>
+                  <View style={styles.optionalLeft}>
+                    <Ionicons name="sunny-outline" size={18} color={COLORS.generation} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.optionalLabel}>Solar Generation (Optional)</Text>
+                      <Text style={styles.optionalDesc}>Read from inverter app (KWH_G)</Text>
+                    </View>
+                  </View>
+                  <View style={styles.optionalInputBox}>
+                    <TextInput
+                      id="input-solar-generation"
+                      style={styles.optionalInput}
+                      value={generationKwh}
+                      onChangeText={setGenerationKwh}
+                      placeholder="e.g. 430"
+                      placeholderTextColor={COLORS.textMuted}
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.unitText}>kWh</Text>
+                  </View>
+                </View>
+
+                {/* ── OPTIONAL DETAILED CHARGES (COLLAPSED) ── */}
+                <TouchableOpacity
+                  id="btn-toggle-details"
+                  style={styles.detailsToggle}
+                  onPress={() => setShowDetails(!showDetails)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.detailsToggleText}>
+                    {showDetails ? '− Hide Detailed Charges & Dates' : '+ Additional Bill Charges & Dates (Optional)'}
+                  </Text>
+                  <Ionicons
+                    name={showDetails ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color={COLORS.gold}
                   />
-                  <Text style={styles.unitText}>kWh</Text>
-                </View>
-                <Text style={styles.coreDesc}>Solar sent to grid</Text>
-              </View>
-            </View>
+                </TouchableOpacity>
 
-            {/* Total Payable Bill Amount */}
-            <View style={styles.amountCard}>
-              <View style={styles.amountTop}>
-                <Ionicons name="cash-outline" size={20} color={COLORS.gold} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.amountLabel}>
-                    Total Bill Amount <Text style={styles.req}>*</Text>
-                  </Text>
-                  <Text style={styles.amountDesc}>Payable amount printed on EDG bill</Text>
-                </View>
-              </View>
-              <View style={styles.amountInputRow}>
-                <Text style={styles.rupeeSign}>₹</Text>
-                <TextInput
-                  id="input-bill-amount"
-                  style={styles.amountInput}
-                  value={billAmount}
-                  onChangeText={setBillAmount}
-                  placeholder="0.00"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="numeric"
-                />
-              </View>
-            </View>
+                {showDetails && (
+                  <View style={styles.detailsContent}>
+                    <View style={styles.row}>
+                      <Field
+                        label="Bill Number"
+                        value={billNumber}
+                        onChange={setBillNumber}
+                        placeholder="17000216006"
+                        style={{ flex: 1 }}
+                      />
+                      <Field
+                        label="Due Date (YYYY-MM-DD)"
+                        value={dueDate}
+                        onChange={setDueDate}
+                        placeholder="2026-10-15"
+                        style={{ flex: 1 }}
+                      />
+                    </View>
 
-            {/* Optional Solar Generation */}
-            <View style={styles.optionalCard}>
-              <View style={styles.optionalLeft}>
-                <Ionicons name="sunny-outline" size={18} color={COLORS.generation} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.optionalLabel}>Solar Generation (Optional)</Text>
-                  <Text style={styles.optionalDesc}>Read from inverter app (KWH_G)</Text>
-                </View>
-              </View>
-              <View style={styles.optionalInputBox}>
-                <TextInput
-                  id="input-solar-generation"
-                  style={styles.optionalInput}
-                  value={generationKwh}
-                  onChangeText={setGenerationKwh}
-                  placeholder="e.g. 430"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="numeric"
-                />
-                <Text style={styles.unitText}>kWh</Text>
-              </View>
-            </View>
+                    <View style={styles.row}>
+                      <Field
+                        label="Fixed/Demand (₹)"
+                        value={demandCharges}
+                        onChange={setDemandCharges}
+                        placeholder="223.46"
+                        keyboardType="numeric"
+                        style={{ flex: 1 }}
+                      />
+                      <Field
+                        label="FPPCA (₹)"
+                        value={fppca}
+                        onChange={setFppca}
+                        placeholder="42.98"
+                        keyboardType="numeric"
+                        style={{ flex: 1 }}
+                      />
+                    </View>
 
-            {/* ── 5. LIVE ENERGY ACCOUNTING PREVIEW ── */}
+                    <View style={styles.row}>
+                      <Field
+                        label="Rebate (₹)"
+                        value={rebate}
+                        onChange={setRebate}
+                        placeholder="-2.37"
+                        keyboardType="numeric"
+                        style={{ flex: 1 }}
+                      />
+                      <Field
+                        label="Custom Billing Days"
+                        value={customDays}
+                        onChange={setCustomDays}
+                        placeholder={String(derivedDates.daysInMonth)}
+                        keyboardType="numeric"
+                        style={{ flex: 1 }}
+                      />
+                    </View>
+
+                    <View style={styles.row}>
+                      <Field
+                        label="Custom Start Date"
+                        value={customStart}
+                        onChange={setCustomStart}
+                        placeholder={derivedDates.start}
+                        style={{ flex: 1 }}
+                      />
+                      <Field
+                        label="Custom End Date"
+                        value={customEnd}
+                        onChange={setCustomEnd}
+                        placeholder={derivedDates.end}
+                        style={{ flex: 1 }}
+                      />
+                    </View>
+
+                    <Field
+                      label="Notes (Optional)"
+                      value={notes}
+                      onChange={setNotes}
+                      placeholder="Meter remarks, tariff notes…"
+                      multiline
+                    />
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* ── 5. LIVE ENERGY ACCOUNTING PREVIEW (SHARED) ── */}
             <View style={styles.liveBox}>
               <View style={styles.liveHeader}>
                 <Ionicons name="flash" size={14} color={COLORS.success} />
@@ -950,107 +1519,6 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                 </View>
               </View>
             </View>
-
-            {/* ── 6. OPTIONAL DETAILED CHARGES (COLLAPSED) ── */}
-            <TouchableOpacity
-              id="btn-toggle-details"
-              style={styles.detailsToggle}
-              onPress={() => setShowDetails(!showDetails)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.detailsToggleText}>
-                {showDetails ? '− Hide Detailed Charges & Dates' : '+ Additional Bill Charges & Dates (Optional)'}
-              </Text>
-              <Ionicons
-                name={showDetails ? 'chevron-up' : 'chevron-down'}
-                size={16}
-                color={COLORS.gold}
-              />
-            </TouchableOpacity>
-
-            {showDetails && (
-              <View style={styles.detailsContent}>
-                <View style={styles.row}>
-                  <Field
-                    label="Bill Number"
-                    value={billNumber}
-                    onChange={setBillNumber}
-                    placeholder="17000216006"
-                    style={{ flex: 1 }}
-                  />
-                  <Field
-                    label="Due Date (YYYY-MM-DD)"
-                    value={dueDate}
-                    onChange={setDueDate}
-                    placeholder="2026-10-15"
-                    style={{ flex: 1 }}
-                  />
-                </View>
-
-                <View style={styles.row}>
-                  <Field
-                    label="Fixed/Demand (₹)"
-                    value={demandCharges}
-                    onChange={setDemandCharges}
-                    placeholder="223.46"
-                    keyboardType="numeric"
-                    style={{ flex: 1 }}
-                  />
-                  <Field
-                    label="FPPCA (₹)"
-                    value={fppca}
-                    onChange={setFppca}
-                    placeholder="42.98"
-                    keyboardType="numeric"
-                    style={{ flex: 1 }}
-                  />
-                </View>
-
-                <View style={styles.row}>
-                  <Field
-                    label="Rebate (₹)"
-                    value={rebate}
-                    onChange={setRebate}
-                    placeholder="-2.37"
-                    keyboardType="numeric"
-                    style={{ flex: 1 }}
-                  />
-                  <Field
-                    label="Custom Billing Days"
-                    value={customDays}
-                    onChange={setCustomDays}
-                    placeholder={String(derivedDates.daysInMonth)}
-                    keyboardType="numeric"
-                    style={{ flex: 1 }}
-                  />
-                </View>
-
-                <View style={styles.row}>
-                  <Field
-                    label="Custom Start Date"
-                    value={customStart}
-                    onChange={setCustomStart}
-                    placeholder={derivedDates.start}
-                    style={{ flex: 1 }}
-                  />
-                  <Field
-                    label="Custom End Date"
-                    value={customEnd}
-                    onChange={setCustomEnd}
-                    placeholder={derivedDates.end}
-                    style={{ flex: 1 }}
-                  />
-                </View>
-
-                <Field
-                  label="Notes (Optional)"
-                  value={notes}
-                  onChange={setNotes}
-                  placeholder="Meter remarks, tariff notes…"
-                  multiline
-                />
-              </View>
-            )}
 
             <View style={{ height: SPACING.md }} />
           </ScrollView>
@@ -1699,5 +2167,551 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: FONT.bold,
     color: COLORS.textInverse,
+  },
+
+  // ── Mode Switcher ──
+  entryModeBar: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: SPACING.md,
+  },
+  entryModeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  entryModeTabActive: {
+    borderColor: COLORS.gold,
+    backgroundColor: `${COLORS.gold}12`,
+  },
+  entryModeTabText: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.textSub,
+  },
+  entryModeTabTextActive: {
+    fontWeight: FONT.bold,
+    color: '#78350F',
+  },
+  easyBadge: {
+    backgroundColor: `${COLORS.gold}24`,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: RADIUS.full,
+  },
+  easyBadgeText: {
+    fontSize: 9,
+    fontWeight: FONT.heavy,
+    color: COLORS.goldDim,
+  },
+
+  // ── EDG Bill View Container ──
+  edgBillContainer: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: RADIUS.lg,
+    padding: SPACING.sm + 4,
+    marginBottom: SPACING.md,
+    ...SHADOW.card,
+  },
+  cutLineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: SPACING.sm,
+    opacity: 0.7,
+  },
+  cutLineDashes: {
+    flex: 1,
+    height: 1,
+    borderWidth: 0.8,
+    borderColor: COLORS.textMuted,
+    borderStyle: 'dashed',
+  },
+  cutLineText: {
+    fontSize: 9,
+    fontWeight: FONT.bold,
+    color: COLORS.textMuted,
+    letterSpacing: 0.8,
+  },
+  edgHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingBottom: SPACING.sm,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#0F172A',
+    marginBottom: SPACING.sm,
+  },
+  edgHeaderTitles: {
+    flex: 1,
+    paddingRight: SPACING.xs,
+  },
+  edgGovTitle: {
+    fontSize: 12,
+    fontWeight: FONT.heavy,
+    color: '#0F172A',
+    letterSpacing: 0.4,
+  },
+  edgSubTitle: {
+    fontSize: 10,
+    color: COLORS.textSub,
+    marginTop: 2,
+  },
+  edgHelplineBadge: {
+    borderWidth: 1,
+    borderColor: '#0F172A',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  edgHelplineLabel: {
+    fontSize: 8,
+    fontWeight: FONT.semi,
+    color: COLORS.textSub,
+  },
+  edgHelplineNumber: {
+    fontSize: 11,
+    fontWeight: FONT.heavy,
+    color: '#0F172A',
+  },
+
+  // Meta Grid
+  edgMetaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: SPACING.sm,
+  },
+  edgMetaCol: {
+    flex: 1,
+    minWidth: '46%',
+  },
+  edgMetaLabel: {
+    fontSize: 10,
+    fontWeight: FONT.semi,
+    color: COLORS.textSub,
+    marginBottom: 2,
+  },
+  edgMetaInput: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.text,
+  },
+
+  // Instruction Banner
+  edgGuideBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: `${COLORS.import}12`,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
+    marginBottom: SPACING.sm,
+  },
+  edgGuideText: {
+    fontSize: 11,
+    color: COLORS.import,
+    fontWeight: FONT.semi,
+    flex: 1,
+  },
+
+  // Sections
+  edgSection: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    marginBottom: SPACING.sm,
+    backgroundColor: '#FAFCFE',
+  },
+  edgSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDF2F7',
+  },
+  edgSectionTitle: {
+    fontSize: 11,
+    fontWeight: FONT.heavy,
+    color: '#1E293B',
+    letterSpacing: 0.2,
+  },
+  edgSectionTag: {
+    fontSize: 9,
+    color: COLORS.goldDim,
+    fontWeight: FONT.semi,
+  },
+
+  // Bank Strip
+  edgBankStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 2,
+  },
+  edgBankItem: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: RADIUS.sm,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+    alignItems: 'center',
+  },
+  edgBankItemComputed: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#94A3B8',
+  },
+  edgBankItemClosing: {
+    backgroundColor: `${COLORS.bank}12`,
+    borderColor: `${COLORS.bank}55`,
+  },
+  edgBankLabelRow: {
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  edgBankLabel: {
+    fontSize: 9,
+    fontWeight: FONT.bold,
+    color: '#334155',
+  },
+  edgBankSub: {
+    fontSize: 8,
+    color: COLORS.textMuted,
+  },
+  edgBankInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  edgBankInput: {
+    fontSize: 13,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+    textAlign: 'center',
+    minWidth: 38,
+    paddingVertical: 2,
+  },
+  edgBankStaticText: {
+    fontSize: 13,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+    textAlign: 'center',
+    minWidth: 32,
+    paddingVertical: 2,
+  },
+  edgUnitSmall: {
+    fontSize: 8,
+    color: COLORS.textMuted,
+    fontWeight: FONT.semi,
+  },
+  edgMathSign: {
+    fontSize: 12,
+    fontWeight: FONT.bold,
+    color: COLORS.textMuted,
+  },
+
+  // Meter Table
+  edgTable: {
+    borderRadius: RADIUS.sm,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  edgTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  edgTh: {
+    fontSize: 10,
+    fontWeight: FONT.bold,
+    color: '#F8FAFC',
+  },
+  edgTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: COLORS.surface,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  edgTableRowHighlight: {
+    backgroundColor: '#F8FAFD',
+  },
+  edgUnitBadge: {
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  edgUnitBadgeText: {
+    fontSize: 10,
+    fontWeight: FONT.heavy,
+    letterSpacing: 0.3,
+  },
+  edgRowTitle: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+  edgRowSub: {
+    fontSize: 9,
+    color: COLORS.textMuted,
+  },
+  edgInputCell: {
+    width: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 3,
+  },
+  edgTableInput: {
+    width: 68,
+    height: 36,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 6,
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+    textAlign: 'right',
+  },
+  edgInputPending: {
+    borderColor: `${COLORS.gold}AA`,
+    backgroundColor: '#FFFBEB',
+  },
+  edgUnitLabel: {
+    fontSize: 11,
+    fontWeight: FONT.semi,
+    color: COLORS.textMuted,
+    width: 25,
+  },
+
+  // ── Bill Summary Mini Row (Matches official bill table) ──
+  edgSummaryMiniRow: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 4,
+    backgroundColor: '#F8FAFC',
+    marginBottom: SPACING.xs + 2,
+    overflow: 'hidden',
+  },
+  edgSummaryMiniCell: {
+    flex: 1,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#E2E8F0',
+  },
+  edgSummaryMiniLabel: {
+    fontSize: 9,
+    fontWeight: FONT.semi,
+    color: COLORS.textMuted,
+  },
+  edgSummaryMiniVal: {
+    fontSize: 10,
+    fontWeight: FONT.bold,
+    color: COLORS.textSub,
+    marginTop: 2,
+  },
+
+  // ── Payable Card (Vertical layout: never breaks on narrow screens) ──
+  edgPayableCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: `${COLORS.gold}66`,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm + 2,
+  },
+  edgPayableTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.xs + 2,
+    gap: 6,
+  },
+  edgPayableLabel: {
+    fontSize: 12,
+    fontWeight: FONT.heavy,
+    color: '#78350F',
+    lineHeight: 16,
+  },
+  edgPayableFormula: {
+    fontSize: 9,
+    color: '#92400E',
+    marginTop: 2,
+  },
+  edgDueBadge: {
+    backgroundColor: `${COLORS.danger}14`,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: `${COLORS.danger}33`,
+  },
+  edgDueBadgeText: {
+    fontSize: 9,
+    fontWeight: FONT.bold,
+    color: COLORS.danger,
+  },
+  edgPayableInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.gold,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    height: 48,
+    width: '100%',
+  },
+  edgRupeeSymbol: {
+    fontSize: 20,
+    fontWeight: FONT.bold,
+    color: COLORS.gold,
+    marginRight: 6,
+  },
+  edgPayableInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+  edgPayableHint: {
+    fontSize: 9,
+    color: '#92400E',
+    marginTop: 5,
+    fontWeight: FONT.medium,
+  },
+
+  // Charges Breakdown
+  edgChargesToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#F8FAFC',
+    marginTop: 4,
+  },
+  edgChargesToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  edgChargesToggleTitle: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+  edgOptionalPill: {
+    fontSize: 9,
+    fontWeight: FONT.semi,
+    color: COLORS.textMuted,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  edgChargesTable: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    padding: SPACING.sm,
+    marginTop: 6,
+  },
+  edgChargesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  edgChargesParticular: {
+    fontSize: 11,
+    color: COLORS.textSub,
+    flex: 1,
+  },
+  edgChargesInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 100,
+    height: 32,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    backgroundColor: COLORS.surface,
+  },
+  edgChargeRupee: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginRight: 2,
+  },
+  edgChargesInput: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.text,
+    textAlign: 'right',
+  },
+  edgNotesInput: {
+    flex: 1,
+    fontSize: 11,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: COLORS.surface,
+    marginLeft: 8,
   },
 });
