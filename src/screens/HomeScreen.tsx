@@ -3,10 +3,10 @@
 // ============================================================
 import React, { useState, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 
 import { SolarBill, SystemProfile, CareAssessment } from "../types/solar";
-import { Card, Badge, InfoNote, ProgressBar } from "../components/ui/UIKit";
+import { Card, Badge, ProgressBar, LedgerRow } from "../components/ui/UIKit";
 import { projectSettlement } from "../domain/tariffEngine";
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from "../constants/theme";
 
@@ -46,6 +46,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 }) => {
 	// ── Scope toggle for Energy Overview (Latest Month vs All Bills) ──
 	const [flowScope, setFlowScope] = useState<"month" | "all">("month");
+	const [activeCompareTab, setActiveCompareTab] = useState<"home" | "export">("home");
+	const [showBreakdown, setShowBreakdown] = useState(false);
 	const [selectedGraphBillId, setSelectedGraphBillId] = useState<string | null>(null);
 
 	// Chronological bills for generation graph (oldest -> newest)
@@ -118,8 +120,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 	const genBillsCount = Math.max(1, bills.filter((b) => b.generationKwh !== null && b.generationKwh !== undefined).length);
 	const allTimeGenAvgPerMonth = (allTimeGeneration / genBillsCount).toFixed(0);
 	const allTimeHomeAvgPerMonth = (displayHomeConsumption / billCount).toFixed(0);
-	const allTimeImpAvgPerMonth = (allTimeImport / billCount).toFixed(0);
-	const allTimeExpAvgPerMonth = (allTimeExport / billCount).toFixed(0);
+
+	const remainingBankedKwh = Math.max(0, displayExp - displayImp);
+	const netGridKwh = displayExp - displayImp;
+	const energyDistTotal = displayHomeConsumption + remainingBankedKwh;
+	const homeUsagePct = energyDistTotal > 0 ? Math.round((displayHomeConsumption / energyDistTotal) * 100) : 0;
+	const bankedSharePct = energyDistTotal > 0 ? Math.max(0, 100 - homeUsagePct) : 0;
 
 	const displayClosingCredit = bill.closingCreditKwh;
 	const careColor = careAssessment.state === "Good" ? COLORS.success : careAssessment.state === "Watch" ? COLORS.warning : COLORS.danger;
@@ -160,146 +166,240 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 				}
 			>
 				<View style={styles.eoContainer}>
-					{/* 2x2 Clean Metric Tiles */}
-					<View style={styles.eoGrid}>
-						{/* Row 1: Generation & Home Use */}
-						<View style={styles.eoRow}>
-							<View style={styles.eoTile}>
-								<View style={styles.eoTileHeader}>
-									<View style={[styles.eoIconBadge, { backgroundColor: "#FEF3C7" }]}>
-										<Ionicons name="sunny" size={15} color="#D97706" />
-									</View>
-									<Text style={styles.eoTileLabel} numberOfLines={1}>Solar Generated</Text>
+					{/* Row 1: Generation & Home Use (Spacious Tiles with Icons) */}
+					<View style={styles.eoRow}>
+						<View style={styles.eoTile}>
+							<View style={styles.eoTileHeader}>
+								<View style={[styles.eoIconBadge, { backgroundColor: "#FEF3C7" }]}>
+									<Ionicons name="sunny" size={16} color="#D97706" />
 								</View>
-								<View style={styles.eoTileValueRow}>
-									<Text style={[styles.eoTileValue, { color: "#D97706" }]}>
-										{displayGen !== null ? displayGen.toFixed(0) : "—"}
-									</Text>
-									<Text style={styles.eoTileUnit}>kWh</Text>
+								<Text style={styles.eoTileLabel} numberOfLines={1}>Solar Generated</Text>
+							</View>
+							<View style={styles.eoTileValueRow}>
+								<Text style={[styles.eoTileValue, { color: "#D97706" }]}>
+									{displayGen !== null ? displayGen.toFixed(0) : "—"}
+								</Text>
+								<Text style={styles.eoTileUnit}>kWh</Text>
+							</View>
+							<Text style={styles.eoTileNote}>
+								{flowScope === "all"
+									? `${allTimeGenAvgPerMonth} kWh/mo avg`
+									: (avgPerDay ? `${avgPerDay} kWh/day` : "Goa meter reading")}
+							</Text>
+						</View>
+
+						<View style={styles.eoTile}>
+							<View style={styles.eoTileHeader}>
+								<View style={[styles.eoIconBadge, { backgroundColor: "#DCFCE7" }]}>
+									<Ionicons name="home" size={16} color="#059669" />
 								</View>
-								<Text style={styles.eoTileNote}>
-									{flowScope === "all"
-										? `${allTimeGenAvgPerMonth} kWh/mo avg`
-										: (avgPerDay ? `${avgPerDay} kWh/day` : "Goa meter reading")}
+								<Text style={styles.eoTileLabel} numberOfLines={1}>Home Consumed</Text>
+							</View>
+							<View style={styles.eoTileValueRow}>
+								<Text style={[styles.eoTileValue, { color: "#059669" }]}>
+									{displayHomeConsumption.toFixed(0)}
+								</Text>
+								<Text style={styles.eoTileUnit}>kWh</Text>
+							</View>
+							<Text style={styles.eoTileNote}>
+								{flowScope === "all" ? `${allTimeHomeAvgPerMonth} kWh/mo avg` : `${selfSufficiencyPct}% from solar`}
+							</Text>
+						</View>
+					</View>
+
+					{/* ── Interactive Energy Distribution Flow ── */}
+					<View style={styles.eoFlowCard}>
+						<View style={styles.eoFlowHeader}>
+							<View style={{ flex: 1, marginRight: SPACING.sm }}>
+								<Text style={styles.eoFlowTitle}>Energy Distribution</Text>
+								<Text style={styles.eoFlowSubtitle} numberOfLines={1}>
+									Home consumption vs. bank storage grid
 								</Text>
 							</View>
+							<TouchableOpacity
+								activeOpacity={0.7}
+								onPress={() => setActiveCompareTab(activeCompareTab === "home" ? "export" : "home")}
+								style={[
+									styles.eoFlowBadge,
+									activeCompareTab === "export" && {
+										backgroundColor: "#E0F2FE",
+										borderColor: "#BAE6FD",
+									},
+								]}
+							>
+								<Text
+									style={[
+										styles.eoFlowBadgeText,
+										activeCompareTab === "export" && { color: "#0284C7" },
+									]}
+								>
+									{activeCompareTab === "home" ? `${homeUsagePct}% Home Use` : `${bankedSharePct}% Sent to Bank`}
+								</Text>
+							</TouchableOpacity>
+						</View>
 
-							<View style={styles.eoTile}>
-								<View style={styles.eoTileHeader}>
-									<View style={[styles.eoIconBadge, { backgroundColor: "#DCFCE7" }]}>
-										<Ionicons name="home" size={15} color="#059669" />
-									</View>
-									<Text style={styles.eoTileLabel} numberOfLines={1}>Home Consumed</Text>
+						{/* Dual-color Split Bar (Tap to select) */}
+						<View style={styles.eoFlowTrack}>
+							<TouchableOpacity
+								id="btn-eo-track-home"
+								activeOpacity={0.8}
+								onPress={() => setActiveCompareTab("home")}
+								style={[
+									styles.eoFlowSegmentHome,
+									{ flex: Math.max(0.05, displayHomeConsumption) },
+									activeCompareTab === "export" && { opacity: 0.45 },
+								]}
+							/>
+							<TouchableOpacity
+								id="btn-eo-track-export"
+								activeOpacity={0.8}
+								onPress={() => setActiveCompareTab("export")}
+								style={[
+									styles.eoFlowSegmentExport,
+									{ flex: Math.max(0.05, remainingBankedKwh) },
+									activeCompareTab === "home" && { opacity: 0.45 },
+								]}
+							/>
+						</View>
+
+						{/* Interactive Pill Tabs */}
+						<View style={styles.eoFlowTabsRow}>
+							<TouchableOpacity
+								id="btn-eo-select-home"
+								activeOpacity={0.7}
+								onPress={() => setActiveCompareTab("home")}
+								style={[
+									styles.eoFlowTab,
+									activeCompareTab === "home" && styles.eoFlowTabActiveHome,
+								]}
+							>
+								<View style={styles.eoFlowTabHeader}>
+									<View style={[styles.eoFlowTabDot, { backgroundColor: "#059669" }]} />
+									<Text style={styles.eoFlowTabLabel} numberOfLines={1}>Used by Home</Text>
 								</View>
-								<View style={styles.eoTileValueRow}>
-									<Text style={[styles.eoTileValue, { color: "#059669" }]}>
+								<View style={styles.eoFlowTabValRow}>
+									<Text style={[styles.eoFlowTabVal, activeCompareTab === "home" && { color: "#065F46" }]}>
 										{displayHomeConsumption.toFixed(0)}
 									</Text>
-									<Text style={styles.eoTileUnit}>kWh</Text>
+									<Text style={styles.eoFlowTabUnit}>kWh</Text>
+									<Text style={styles.eoFlowTabShare}>({homeUsagePct}%)</Text>
 								</View>
-								<Text style={styles.eoTileNote}>
-									{flowScope === "all" ? `${allTimeHomeAvgPerMonth} kWh/mo avg` : "Estimated use"}
-								</Text>
-							</View>
-						</View>
+							</TouchableOpacity>
 
-						{/* Row 2: Grid Import & Grid Export */}
-						<View style={styles.eoRow}>
-							<View style={styles.eoTile}>
-								<View style={styles.eoTileHeader}>
-									<View style={[styles.eoIconBadge, { backgroundColor: "#E0F2FE" }]}>
-										<MaterialCommunityIcons name="arrow-down" size={16} color="#0284C7" />
-									</View>
-									<Text style={styles.eoTileLabel} numberOfLines={1}>Grid Import</Text>
+							<TouchableOpacity
+								id="btn-eo-select-export"
+								activeOpacity={0.7}
+								onPress={() => setActiveCompareTab("export")}
+								style={[
+									styles.eoFlowTab,
+									activeCompareTab === "export" && styles.eoFlowTabActiveExport,
+								]}
+							>
+								<View style={styles.eoFlowTabHeader}>
+									<View style={[styles.eoFlowTabDot, { backgroundColor: "#0284C7" }]} />
+									<Text style={styles.eoFlowTabLabel} numberOfLines={1}>Sent to Bank</Text>
 								</View>
-								<View style={styles.eoTileValueRow}>
-									<Text style={[styles.eoTileValue, { color: COLORS.text }]}>
-										{displayImp.toFixed(0)}
+								<View style={styles.eoFlowTabValRow}>
+									<Text style={[styles.eoFlowTabVal, activeCompareTab === "export" && { color: "#0369A1" }]}>
+										{remainingBankedKwh.toFixed(0)}
 									</Text>
-									<Text style={styles.eoTileUnit}>kWh</Text>
+									<Text style={styles.eoFlowTabUnit}>kWh</Text>
+									<Text style={styles.eoFlowTabShare}>({bankedSharePct}%)</Text>
 								</View>
-								<Text style={styles.eoTileNote}>
-									{flowScope === "all" ? `${allTimeImpAvgPerMonth} kWh/mo avg` : "Drawn from grid"}
-								</Text>
-							</View>
+							</TouchableOpacity>
+						</View>
 
-							<View style={styles.eoTile}>
-								<View style={styles.eoTileHeader}>
-									<View style={[styles.eoIconBadge, { backgroundColor: "#ECFDF5" }]}>
-										<MaterialCommunityIcons name="arrow-up" size={16} color="#059669" />
-									</View>
-									<Text style={styles.eoTileLabel} numberOfLines={1}>Grid Export</Text>
-								</View>
-								<View style={styles.eoTileValueRow}>
-									<Text style={[styles.eoTileValue, { color: COLORS.text }]}>
-										{displayExp.toFixed(0)}
-									</Text>
-									<Text style={styles.eoTileUnit}>kWh</Text>
-								</View>
-								<Text style={styles.eoTileNote}>
-									{flowScope === "all" ? `${allTimeExpAvgPerMonth} kWh/mo avg` : "Sent to grid"}
-								</Text>
-							</View>
-						</View>
-					</View>
-
-					{/* Banked Credit Balance Pill */}
-					<View style={styles.eoRemainingCard}>
-						<View style={styles.eoRemainingIconWrap}>
-							<Ionicons name="battery-charging" size={18} color="#059669" />
-						</View>
-						<View style={styles.eoRemainingCol}>
-							<Text style={styles.eoRemainingTitle}>Banked Energy Credit</Text>
-							<Text style={styles.eoRemainingSubtitle}>Carried forward to next bill</Text>
-						</View>
-						<View style={styles.eoRemainingValueCol}>
-							<Text style={styles.eoRemainingValue}>
-								{displayClosingCredit}{" "}
-								<Text style={styles.eoRemainingUnit}>kWh</Text>
+						{/* Dynamic Contextual Detail Banner */}
+						<View
+							style={[
+								styles.eoFlowCallout,
+								activeCompareTab === "home" ? styles.eoFlowCalloutHome : styles.eoFlowCalloutExport,
+							]}
+						>
+							<Ionicons
+								name={activeCompareTab === "home" ? "home-outline" : "battery-charging-outline"}
+								size={14}
+								color={activeCompareTab === "home" ? "#059669" : "#0284C7"}
+							/>
+							<Text style={styles.eoFlowCalloutText} numberOfLines={2}>
+								{activeCompareTab === "home"
+									? `Direct solar (${directSolarUse.toFixed(0)} kWh) covers ${selfSufficiencyPct}% of home use · ${displayImp.toFixed(0)} kWh drawn from grid`
+									: `${displayExp.toFixed(0)} kWh export − ${displayImp.toFixed(0)} kWh import = ${remainingBankedKwh.toFixed(0)} kWh net surplus stored in grid`}
 							</Text>
 						</View>
 					</View>
 
-					{/* ── Solar Utilization & Self-Sufficiency ── */}
-					{displayGen !== null && displayGen > 0 && (
-						<View style={styles.selfSuffContainer}>
-							<View style={styles.selfSuffHeader}>
-								<View>
-									<Text style={styles.selfSuffTitle}>Solar Utilization</Text>
-									<Text style={styles.selfSuffSubTitle}>Direct consumption vs. grid export</Text>
-								</View>
-								<View style={styles.selfSuffBadge}>
-									<Text style={styles.selfSuffBadgeText}>{selfSufficiencyPct}% Self-Sufficient</Text>
-								</View>
+					{/* ── Expandable Energy Ledger Drawer ── */}
+					<View style={styles.ledgerSection}>
+						<TouchableOpacity
+							id="btn-toggle-energy-ledger"
+							style={styles.expandLedgerBtn}
+							onPress={() => setShowBreakdown(!showBreakdown)}
+							activeOpacity={0.7}
+						>
+							<View style={styles.expandLedgerLeft}>
+								<Ionicons name="receipt-outline" size={15} color={COLORS.textSub} />
+								<Text style={styles.expandLedgerText}>
+									{showBreakdown ? "Hide Full Energy Ledger" : "View Full Energy Ledger"}
+								</Text>
 							</View>
-
-							{/* Dual-color Split Bar */}
-							<View style={styles.selfSuffTrack}>
-								<View style={[styles.selfSuffSegmentDirect, { flex: Math.max(0.05, directSolarUse) }]} />
-								<View style={[styles.selfSuffSegmentExport, { flex: Math.max(0.05, displayExp) }]} />
+							<View style={styles.expandLedgerRight}>
+								<Text style={styles.expandLedgerHint}>
+									{showBreakdown ? "Less" : "Audit"}
+								</Text>
+								<Ionicons
+									name={showBreakdown ? "chevron-up" : "chevron-down"}
+									size={15}
+									color={COLORS.textMuted}
+								/>
 							</View>
+						</TouchableOpacity>
 
-							{/* Legend / Breakdown */}
-							<View style={styles.selfSuffLegendRow}>
-								<View style={styles.selfSuffLegendItem}>
-									<View style={[styles.selfSuffDot, { backgroundColor: "#059669" }]} />
-									<Text style={styles.selfSuffLegendText}>
-										Direct use: <Text style={styles.selfSuffLegendBold}>{directSolarUse.toFixed(0)} kWh</Text>
-									</Text>
-								</View>
-								<View style={styles.selfSuffLegendItem}>
-									<View style={[styles.selfSuffDot, { backgroundColor: "#F59E0B" }]} />
-									<Text style={styles.selfSuffLegendText}>
-										Exported: <Text style={styles.selfSuffLegendBold}>{displayExp.toFixed(0)} kWh</Text>
-									</Text>
-								</View>
+						{showBreakdown && (
+							<View style={styles.ledgerDrawer}>
+								<LedgerRow
+									label="Solar Generation"
+									value={`${(displayGen ?? 0).toFixed(0)} kWh`}
+									valueColor="#D97706"
+								/>
+								<LedgerRow
+									label="Direct Daytime Solar Used"
+									value={`${directSolarUse.toFixed(0)} kWh`}
+									valueColor="#059669"
+								/>
+								<LedgerRow
+									label="Grid Power Imported"
+									value={`${displayImp.toFixed(0)} kWh`}
+									valueColor={COLORS.text}
+								/>
+								<LedgerRow
+									label="Total Home Consumption"
+									value={`${displayHomeConsumption.toFixed(0)} kWh`}
+									valueColor="#059669"
+								/>
+								<LedgerRow
+									label="Gross Solar Exported"
+									value={`${displayExp.toFixed(0)} kWh`}
+									valueColor="#0284C7"
+								/>
+								<LedgerRow
+									label="Net Surplus This Cycle"
+									value={`${netGridKwh >= 0 ? `+${remainingBankedKwh.toFixed(0)}` : `-${Math.abs(netGridKwh).toFixed(0)}`} kWh`}
+									valueColor={netGridKwh >= 0 ? COLORS.success : COLORS.warning}
+								/>
+								<LedgerRow
+									label="Banked Energy Credit Balance"
+									value={`${displayClosingCredit} kWh`}
+									valueColor="#0284C7"
+								/>
+								<LedgerRow
+									label="Solar Self-Sufficiency"
+									value={`${selfSufficiencyPct}%`}
+									valueColor={COLORS.success}
+								/>
 							</View>
-
-							<Text style={styles.selfSuffNote}>
-								Direct use is solar electricity consumed on-site before grid export.
-							</Text>
-						</View>
-					)}
+						)}
+					</View>
 				</View>
 			</Card>
 
@@ -445,48 +545,69 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 				</View>
 			</Card>
 
-			{/* ─── 4. Annual Settlement Outlook ─── */}
-			{settlement ? (
-				<Card
-					title="Annual Settlement Outlook"
-					subtitle="FY 2026-27 · JERC Net Metering"
-					style={styles.cardSpacing}
-					badge={<Badge label="31 May 2027" color={COLORS.info} />}
-				>
-					<View style={styles.settlementCard}>
-						<View style={styles.settlementTopRow}>
-							<View style={styles.settlementTitleCol}>
-								<Text style={styles.settlementHeaderLabel}>Projected Payout</Text>
-								<Text style={styles.settlementHeaderSub}>Surplus energy settlement</Text>
-							</View>
-							<View style={styles.settlementPayoutWrap}>
-								<Text style={styles.settlementPayoutVal}>₹{settlement.projectedPayoutInr.toFixed(0)}</Text>
-							</View>
+			{/* ─── 4. Banked Credit & Annual Settlement ─── */}
+			<Card
+				title="Banked Credit & Settlement"
+				subtitle="FY 2026-27 · JERC Net Metering"
+				style={styles.cardSpacing}
+				badge={<Badge label={settlement ? "Settles 31 May" : "Annual Settlement"} color={COLORS.info} />}
+			>
+				<View style={styles.settlementCard}>
+					{/* Banked Energy Balance */}
+					<View style={styles.settlementBankedRow}>
+						<View style={styles.settlementIconWrap}>
+							<Ionicons name="battery-charging" size={18} color="#059669" />
 						</View>
-
-						<View style={styles.settlementBottomRow}>
-							<View style={styles.settlementDetailCol}>
-								<Text style={styles.settlementDetailLabel}>Banked Credit</Text>
-								<Text style={styles.settlementDetailVal}>{settlement.bankedCreditKwh} kWh</Text>
-							</View>
-							<View style={[styles.settlementDetailCol, { alignItems: "flex-end" }]}>
-								<Text style={styles.settlementDetailLabel}>APPC Rate</Text>
-								<Text style={styles.settlementDetailVal}>₹{settlement.ratePerKwh}/kWh</Text>
-							</View>
+						<View style={styles.settlementBankedCol}>
+							<Text style={styles.settlementBankedLabel}>Banked Credit Balance</Text>
+							<Text style={styles.settlementBankedSub} numberOfLines={1}>
+								{displayExp.toFixed(0)} export − {displayImp.toFixed(0)} import = +{remainingBankedKwh.toFixed(0)} kWh this bill
+							</Text>
+						</View>
+						<View style={styles.settlementBankedValWrap}>
+							<Text style={styles.settlementBankedVal}>
+								{displayClosingCredit}{" "}
+								<Text style={styles.settlementBankedUnit}>kWh</Text>
+							</Text>
 						</View>
 					</View>
 
-					<Text style={styles.settlementFootnote}>
-						Estimate based on banked units. Final settlement processed annually by Electricity Department Goa.
-					</Text>
-				</Card>
-			) : (
-				<InfoNote
-					text="Set the APPC settlement rate in Settings to view your projected annual payout."
-					color={COLORS.info}
-					style={styles.cardSpacing}
-				/>
-			)}
+					{/* Settlement Projection / Rate Details */}
+					{settlement ? (
+						<View style={styles.settlementPayoutBlock}>
+							<View style={styles.settlementDivider} />
+							<View style={styles.settlementMetricsRow}>
+								<View style={styles.settlementMetricCol}>
+									<Text style={styles.settlementDetailLabel}>Projected Payout</Text>
+									<Text style={styles.settlementPayoutVal}>₹{settlement.projectedPayoutInr.toFixed(0)}</Text>
+								</View>
+								<View style={[styles.settlementMetricCol, { alignItems: "center" }]}>
+									<Text style={styles.settlementDetailLabel}>APPC Rate</Text>
+									<Text style={styles.settlementDetailVal}>₹{settlement.ratePerKwh}/kWh</Text>
+								</View>
+								<View style={[styles.settlementMetricCol, { alignItems: "flex-end" }]}>
+									<Text style={styles.settlementDetailLabel}>Settlement Date</Text>
+									<Text style={styles.settlementDetailVal}>31 May 2027</Text>
+								</View>
+							</View>
+						</View>
+					) : (
+						<View style={styles.settlementPromptBlock}>
+							<View style={styles.settlementDivider} />
+							<View style={styles.settlementPromptRow}>
+								<Ionicons name="information-circle-outline" size={16} color={COLORS.info} />
+								<Text style={styles.settlementPromptText}>
+									Set your APPC settlement rate in Settings to calculate your projected annual cash payout for these {displayClosingCredit} banked units.
+								</Text>
+							</View>
+						</View>
+					)}
+				</View>
+
+				<Text style={styles.settlementFootnote}>
+					Net surplus units carry forward across billing cycles and are settled annually by Electricity Department Goa under JERC net metering regulations.
+				</Text>
+			</Card>
 		</ScrollView>
 	);
 };
@@ -551,13 +672,11 @@ const styles = StyleSheet.create({
 		fontWeight: FONT.bold,
 	},
 
-	// ── Energy Overview ──────────────────────────────────────────
+	// ── Energy Overview (Refactored Clean Hierarchy) ──────────
 	eoContainer: {
-		gap: SPACING.md,
+		gap: SPACING.md - 2,
 	},
-	eoGrid: {
-		gap: SPACING.sm + 2,
-	},
+	// 2 Spacious Metric Tiles with Icons
 	eoRow: {
 		flexDirection: "row",
 		gap: SPACING.sm + 2,
@@ -578,9 +697,9 @@ const styles = StyleSheet.create({
 		marginBottom: 6,
 	},
 	eoIconBadge: {
-		width: 26,
-		height: 26,
-		borderRadius: 13,
+		width: 28,
+		height: 28,
+		borderRadius: 14,
 		alignItems: "center",
 		justifyContent: "center",
 	},
@@ -612,135 +731,183 @@ const styles = StyleSheet.create({
 		marginTop: 3,
 	},
 
-	// Banked Balance Pill
-	eoRemainingCard: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 12,
-		backgroundColor: "#F0FDF4",
+
+	// Interactive Flow Section
+	eoFlowCard: {
+		backgroundColor: "#F8FAFC",
 		borderRadius: RADIUS.md,
 		borderWidth: 1,
-		borderColor: "#DCFCE7",
+		borderColor: "#EEF2F6",
 		paddingVertical: 12,
-		paddingHorizontal: 14,
+		paddingHorizontal: 12,
 	},
-	eoRemainingIconWrap: {
-		width: 34,
-		height: 34,
-		borderRadius: 17,
-		backgroundColor: "#DCFCE7",
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	eoRemainingCol: {
-		flex: 1,
-	},
-	eoRemainingTitle: {
-		fontSize: 13,
-		fontWeight: FONT.bold,
-		color: "#065F46",
-	},
-	eoRemainingSubtitle: {
-		fontSize: 11,
-		color: "#059669",
-		marginTop: 1,
-	},
-	eoRemainingValueCol: {
-		alignItems: "flex-end",
-	},
-	eoRemainingValue: {
-		fontSize: 21,
-		fontWeight: FONT.heavy,
-		color: "#065F46",
-		letterSpacing: -0.5,
-	},
-	eoRemainingUnit: {
-		fontSize: 12,
-		fontWeight: FONT.semi,
-		color: "#059669",
-	},
-
-	// ── Self-Sufficiency Section ──────────────────────────────
-	selfSuffContainer: {
-		marginTop: 2,
-		paddingTop: SPACING.md,
-		borderTopWidth: 1,
-		borderTopColor: COLORS.borderSubtle,
-	},
-	selfSuffHeader: {
+	eoFlowHeader: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
 		marginBottom: 8,
 	},
-	selfSuffTitle: {
+	eoFlowTitle: {
 		fontSize: 13,
 		fontWeight: FONT.bold,
 		color: COLORS.text,
 	},
-	selfSuffSubTitle: {
+	eoFlowSubtitle: {
 		fontSize: 11,
 		color: COLORS.textMuted,
 		marginTop: 1,
 	},
-	selfSuffBadge: {
+	eoFlowBadge: {
 		backgroundColor: "#ECFDF5",
-		paddingHorizontal: 9,
+		paddingHorizontal: 8,
 		paddingVertical: 3,
 		borderRadius: RADIUS.full,
 		borderWidth: 1,
 		borderColor: "#A7F3D0",
 	},
-	selfSuffBadgeText: {
+	eoFlowBadgeText: {
 		fontSize: 11,
 		fontWeight: FONT.bold,
 		color: "#059669",
 	},
-	selfSuffTrack: {
+	eoFlowTrack: {
 		flexDirection: "row",
-		height: 8,
+		height: 10,
 		gap: 3,
 		width: "100%",
-		borderRadius: 4,
+		borderRadius: 5,
 		overflow: "hidden",
-		marginBottom: 8,
+		marginBottom: 10,
 	},
-	selfSuffSegmentDirect: {
+	eoFlowSegmentHome: {
 		backgroundColor: "#059669",
 		borderRadius: 4,
+		height: "100%",
 	},
-	selfSuffSegmentExport: {
-		backgroundColor: "#F59E0B",
+	eoFlowSegmentExport: {
+		backgroundColor: "#0284C7",
 		borderRadius: 4,
+		height: "100%",
 	},
-	selfSuffLegendRow: {
+	eoFlowTabsRow: {
+		flexDirection: "row",
+		gap: 8,
+		marginBottom: 8,
+	},
+	eoFlowTab: {
+		flex: 1,
+		backgroundColor: COLORS.surface,
+		borderRadius: RADIUS.sm,
+		borderWidth: 1,
+		borderColor: COLORS.border,
+		paddingVertical: 7,
+		paddingHorizontal: 9,
+	},
+	eoFlowTabActiveHome: {
+		backgroundColor: "#F0FDF4",
+		borderColor: "#86EFAC",
+	},
+	eoFlowTabActiveExport: {
+		backgroundColor: "#F0F9FF",
+		borderColor: "#BAE6FD",
+	},
+	eoFlowTabHeader: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 5,
+		marginBottom: 2,
+	},
+	eoFlowTabDot: {
+		width: 7,
+		height: 7,
+		borderRadius: 3.5,
+	},
+	eoFlowTabLabel: {
+		fontSize: 11,
+		fontWeight: FONT.medium,
+		color: COLORS.textMuted,
+		flex: 1,
+	},
+	eoFlowTabValRow: {
+		flexDirection: "row",
+		alignItems: "baseline",
+		gap: 3,
+	},
+	eoFlowTabVal: {
+		fontSize: 15,
+		fontWeight: FONT.heavy,
+		color: COLORS.text,
+	},
+	eoFlowTabUnit: {
+		fontSize: 10,
+		color: COLORS.textMuted,
+		fontWeight: FONT.medium,
+	},
+	eoFlowTabShare: {
+		fontSize: 11,
+		fontWeight: FONT.semi,
+		color: COLORS.textSub,
+		marginLeft: "auto",
+	},
+	eoFlowCallout: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 6,
+		paddingVertical: 6,
+		paddingHorizontal: 8,
+		borderRadius: RADIUS.sm - 2,
+	},
+	eoFlowCalloutHome: {
+		backgroundColor: "#F0FDF4",
+	},
+	eoFlowCalloutExport: {
+		backgroundColor: "#F0F9FF",
+	},
+	eoFlowCalloutText: {
+		fontSize: 11,
+		color: COLORS.textSub,
+		flex: 1,
+		lineHeight: 14,
+	},
+
+	// Expandable Ledger Drawer
+	ledgerSection: {
+		marginTop: 2,
+	},
+	expandLedgerBtn: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
-		marginBottom: 6,
+		paddingVertical: 8,
+		paddingHorizontal: 6,
 	},
-	selfSuffLegendItem: {
+	expandLedgerLeft: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: 6,
 	},
-	selfSuffDot: {
-		width: 8,
-		height: 8,
-		borderRadius: 4,
-	},
-	selfSuffLegendText: {
+	expandLedgerText: {
 		fontSize: 12,
+		fontWeight: FONT.semi,
 		color: COLORS.textSub,
 	},
-	selfSuffLegendBold: {
-		fontWeight: FONT.bold,
-		color: COLORS.text,
+	expandLedgerRight: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 4,
 	},
-	selfSuffNote: {
+	expandLedgerHint: {
 		fontSize: 11,
 		color: COLORS.textMuted,
-		lineHeight: 16,
+	},
+	ledgerDrawer: {
+		backgroundColor: "#F8FAFC",
+		borderRadius: RADIUS.md,
+		paddingVertical: 8,
+		paddingHorizontal: 12,
+		borderWidth: 1,
+		borderColor: "#EEF2F6",
+		marginTop: 4,
 	},
 
 	// ── Generation Graph Card ───────────────────────────────────
@@ -959,7 +1126,7 @@ const styles = StyleSheet.create({
 		fontWeight: FONT.semi,
 	},
 
-	// ── Annual Settlement Outlook ───────────────────────────────
+	// ── Banked Credit & Annual Settlement ───────────────────────
 	settlementCard: {
 		backgroundColor: "#F8FAFC",
 		borderRadius: RADIUS.md,
@@ -967,55 +1134,97 @@ const styles = StyleSheet.create({
 		borderColor: "#E2E8F0",
 		padding: SPACING.md,
 	},
-	settlementTopRow: {
+	settlementBankedRow: {
 		flexDirection: "row",
 		alignItems: "center",
-		justifyContent: "space-between",
-		paddingBottom: SPACING.sm + 2,
-		borderBottomWidth: 1,
-		borderBottomColor: "#EEF2F6",
+		gap: SPACING.sm + 2,
 	},
-	settlementTitleCol: {
+	settlementIconWrap: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
+		backgroundColor: "#DCFCE7",
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	settlementBankedCol: {
 		flex: 1,
 	},
-	settlementHeaderLabel: {
-		fontSize: 11,
+	settlementBankedLabel: {
+		fontSize: 13,
 		fontWeight: FONT.semi,
+		color: COLORS.text,
+	},
+	settlementBankedSub: {
+		fontSize: 11,
 		color: COLORS.textMuted,
-		textTransform: "uppercase",
-		letterSpacing: 0.4,
+		marginTop: 2,
 	},
-	settlementHeaderSub: {
-		fontSize: 12,
-		color: COLORS.textSub,
-		marginTop: 1,
-	},
-	settlementPayoutWrap: {
+	settlementBankedValWrap: {
 		alignItems: "flex-end",
 	},
-	settlementPayoutVal: {
-		fontSize: 22,
+	settlementBankedVal: {
+		fontSize: 21,
 		fontWeight: FONT.heavy,
-		color: COLORS.success,
+		color: "#059669",
 		letterSpacing: -0.5,
 	},
-	settlementBottomRow: {
+	settlementBankedUnit: {
+		fontSize: 12,
+		fontWeight: FONT.semi,
+		color: COLORS.textMuted,
+	},
+	settlementDivider: {
+		height: 1,
+		backgroundColor: "#EEF2F6",
+		marginVertical: SPACING.sm + 4,
+	},
+	settlementPayoutBlock: {
+		marginTop: 0,
+	},
+	settlementMetricsRow: {
 		flexDirection: "row",
 		justifyContent: "space-between",
-		paddingTop: SPACING.sm + 2,
+		alignItems: "flex-start",
 	},
-	settlementDetailCol: {
+	settlementMetricCol: {
 		flex: 1,
 	},
 	settlementDetailLabel: {
 		fontSize: 11,
 		color: COLORS.textMuted,
+		fontWeight: FONT.medium,
+	},
+	settlementPayoutVal: {
+		fontSize: 19,
+		fontWeight: FONT.heavy,
+		color: COLORS.success,
+		letterSpacing: -0.5,
+		marginTop: 2,
 	},
 	settlementDetailVal: {
-		fontSize: 14,
+		fontSize: 13,
 		fontWeight: FONT.bold,
 		color: COLORS.text,
 		marginTop: 2,
+	},
+	settlementPromptBlock: {
+		marginTop: 0,
+	},
+	settlementPromptRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 8,
+		backgroundColor: "#F1F5F9",
+		paddingVertical: 8,
+		paddingHorizontal: 10,
+		borderRadius: RADIUS.sm,
+	},
+	settlementPromptText: {
+		fontSize: 11,
+		color: COLORS.textSub,
+		flex: 1,
+		lineHeight: 16,
 	},
 	settlementFootnote: {
 		fontSize: 11,

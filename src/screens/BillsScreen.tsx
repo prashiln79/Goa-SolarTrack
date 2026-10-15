@@ -1,7 +1,7 @@
 // ============================================================
-// Bills Screen — History of all monthly bills
+// Bills Screen — Compact History of Monthly Bills
 // PRD §3.2 / §13.1 monthly analytics
-// Clean, minimal, and intuitive design
+// Clean, minimal, compact, and intuitive design
 // ============================================================
 import React, { useState } from 'react';
 import {
@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SolarBill } from '../types/solar';
-import { Card, Divider, LedgerRow, InfoNote } from '../components/ui/UIKit';
+import { Divider, LedgerRow, InfoNote } from '../components/ui/UIKit';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
 
 interface BillsScreenProps {
@@ -26,7 +26,7 @@ interface BillsScreenProps {
 
 export const BillsScreen: React.FC<BillsScreenProps> = ({
   bills,
-  onAddBill,
+  onAddBill: _onAddBill,
   onDeleteBill,
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -84,7 +84,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
       {bills.length === 0 && (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
-            <Ionicons name="document-text-outline" size={36} color={COLORS.gold} />
+            <Ionicons name="document-text-outline" size={32} color={COLORS.gold} />
           </View>
           <Text style={styles.emptyTitle}>No bills recorded yet</Text>
           <Text style={styles.emptySub}>
@@ -93,7 +93,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
         </View>
       )}
 
-      {/* ── Bills List ── */}
+      {/* ── Compact Bills List ── */}
       {bills.map((bill) => {
         const expanded = expandedId === bill.id;
         const readInterval =
@@ -102,76 +102,88 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
             : null;
 
         return (
-          <Card
+          <TouchableOpacity
             key={bill.id}
-            title={bill.period}
-            subtitle={
-              readInterval
-                ? `Readings: ${readInterval} (${bill.billingDays || 31}d)`
-                : `Bill #${bill.billNumber ?? 'N/A'} · Due: ${bill.dueDate ?? 'N/A'}`
-            }
-            style={styles.cardSpacing}
-            badge={
-              <View style={styles.amountBadge}>
-                <Text style={styles.amountBadgeText}>₹{bill.billAmount.toFixed(0)}</Text>
-              </View>
-            }
+            id={`btn-expand-bill-${bill.id}`}
+            activeOpacity={0.75}
+            onPress={() => toggle(bill.id)}
+            style={[styles.billCard, expanded && styles.billCardExpanded]}
           >
-            {/* ── 3 Key Metric Tiles ── */}
-            <View style={styles.summaryGrid}>
-              <View style={styles.summaryTile}>
-                <Text style={styles.summaryLabel}>Solar Gen</Text>
-                <Text style={[styles.summaryValue, { color: '#D97706' }]}>
-                  {bill.generationKwh !== null ? bill.generationKwh : '—'}
+            {/* ── Main Row: Period + Days/Due & Amount Badge + Chevron ── */}
+            <View style={styles.billHeaderRow}>
+              <View style={styles.billTitleCol}>
+                <View style={styles.billTitleRow}>
+                  <Text style={styles.billPeriod}>{bill.period}</Text>
+                  {bill.needsReview && (
+                    <View style={styles.warningPill}>
+                      <Ionicons name="alert-circle" size={12} color={COLORS.danger} />
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.billMeta} numberOfLines={1}>
+                  {readInterval
+                    ? `${readInterval} (${bill.billingDays || 30}d)`
+                    : `Bill #${bill.billNumber ?? 'N/A'} · Due: ${bill.dueDate ?? '—'}`}
                 </Text>
-                <Text style={styles.summaryUnit}>kWh</Text>
               </View>
 
-              <View style={styles.summaryTile}>
-                <Text style={styles.summaryLabel}>Exported</Text>
-                <Text style={[styles.summaryValue, { color: COLORS.text }]}>
-                  {bill.exportKwh}
-                </Text>
-                <Text style={styles.summaryUnit}>kWh</Text>
-              </View>
-
-              <View style={styles.summaryTile}>
-                <Text style={styles.summaryLabel}>Banked Credit</Text>
-                <Text style={[styles.summaryValue, { color: '#059669' }]}>
-                  {bill.closingCreditKwh}
-                </Text>
-                <Text style={styles.summaryUnit}>kWh</Text>
+              <View style={styles.billHeaderRight}>
+                <View style={styles.billAmountBadge}>
+                  <Text style={styles.billAmountText}>₹{bill.billAmount.toFixed(0)}</Text>
+                </View>
+                <Ionicons
+                  name={expanded ? 'chevron-up' : 'chevron-down'}
+                  size={15}
+                  color={COLORS.textMuted}
+                  style={styles.chevronIcon}
+                />
               </View>
             </View>
 
-            {/* ── Expand/Collapse Ledger Toggle ── */}
-            <TouchableOpacity
-              id={`btn-expand-bill-${bill.id}`}
-              style={styles.expandToggle}
-              onPress={() => toggle(bill.id)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.expandToggleText}>
-                {expanded ? 'Hide ledger & charges' : 'Show full energy ledger & charges'}
-              </Text>
-              <Ionicons
-                name={expanded ? 'chevron-up' : 'chevron-down'}
-                size={14}
-                color={COLORS.textSub}
-              />
-            </TouchableOpacity>
+            {/* ── Compact Key Stats Strip (Gen, Export, Banked) ── */}
+            <View style={styles.compactMetricsRow}>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricLabel}>Gen</Text>
+                <Text style={[styles.metricVal, { color: '#D97706' }]}>
+                  {bill.generationKwh !== null && bill.generationKwh !== undefined
+                    ? bill.generationKwh
+                    : '—'}
+                  <Text style={styles.metricUnit}> kWh</Text>
+                </Text>
+              </View>
+
+              <View style={styles.metricDivider} />
+
+              <View style={styles.metricItem}>
+                <Text style={styles.metricLabel}>Export</Text>
+                <Text style={[styles.metricVal, { color: COLORS.text }]}>
+                  {bill.exportKwh}
+                  <Text style={styles.metricUnit}> kWh</Text>
+                </Text>
+              </View>
+
+              <View style={styles.metricDivider} />
+
+              <View style={styles.metricItem}>
+                <Text style={styles.metricLabel}>Banked</Text>
+                <Text style={[styles.metricVal, { color: '#059669' }]}>
+                  {bill.closingCreditKwh}
+                  <Text style={styles.metricUnit}> kWh</Text>
+                </Text>
+              </View>
+            </View>
 
             {/* ── Expanded Detail Box ── */}
             {expanded && (
-              <View style={styles.expandedBox}>
+              <View style={styles.expandedDrawer}>
                 <Text style={styles.expandedSection}>METER READING & INTERVAL</Text>
                 {readInterval ? (
                   <LedgerRow label="Meter Read Period" value={readInterval} />
                 ) : null}
-                <LedgerRow label="Billing Days" value={`${bill.billingDays || 31} days`} />
+                <LedgerRow label="Billing Days" value={`${bill.billingDays || 30} days`} />
                 {bill.dueDate && <LedgerRow label="Payment Due Date" value={bill.dueDate} />}
 
-                <Divider style={{ marginVertical: SPACING.sm }} />
+                <Divider style={{ marginVertical: SPACING.xs + 2 }} />
                 <Text style={styles.expandedSection}>ENERGY LEDGER (KWH)</Text>
                 <LedgerRow label="Opening Bank Balance" value={`${bill.openingCreditKwh} kWh`} />
                 <LedgerRow label="+ Current Export" value={`${bill.exportKwh} kWh`} valueColor={COLORS.export} />
@@ -187,7 +199,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
                   />
                 )}
 
-                <Divider style={{ marginVertical: SPACING.sm }} />
+                <Divider style={{ marginVertical: SPACING.xs + 2 }} />
                 <Text style={styles.expandedSection}>BILL COMPONENTS (INR)</Text>
                 {bill.demandCharges !== undefined && (
                   <LedgerRow label="Demand / Fixed Charge" value={`₹${bill.demandCharges.toFixed(2)}`} />
@@ -204,7 +216,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
                   <InfoNote
                     text="⚠️ Mismatch detected between bill-stated and calculated values. Preserved as-is per PRD §6.1."
                     color={COLORS.danger}
-                    style={{ marginTop: SPACING.sm }}
+                    style={{ marginTop: SPACING.xs + 2 }}
                   />
                 )}
 
@@ -218,12 +230,12 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
                   onPress={() => confirmDelete(bill)}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="trash-outline" size={14} color={COLORS.danger} />
+                  <Ionicons name="trash-outline" size={13} color={COLORS.danger} />
                   <Text style={styles.deleteBtnText}>Remove this bill</Text>
                 </TouchableOpacity>
               </View>
             )}
-          </Card>
+          </TouchableOpacity>
         );
       })}
     </ScrollView>
@@ -240,126 +252,164 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.xxl + 24,
   },
   topBar: {
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm + 2,
     paddingHorizontal: 2,
   },
   pageTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: FONT.heavy,
     color: COLORS.text,
   },
   pageSub: {
     fontSize: 12,
     color: COLORS.textSub,
-    marginTop: 2,
-  },
-  cardSpacing: {
-    marginBottom: SPACING.lg,
-  },
-
-  // Amount badge
-  amountBadge: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-  },
-  amountBadgeText: {
-    fontSize: 13,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
-  },
-
-  // 3-tile Summary Row
-  summaryGrid: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginBottom: SPACING.xs,
-  },
-  summaryTile: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    fontWeight: FONT.medium,
-  },
-  summaryValue: {
-    fontSize: 18,
-    fontWeight: FONT.heavy,
-    letterSpacing: -0.3,
-    marginTop: 3,
-  },
-  summaryUnit: {
-    fontSize: 10,
-    fontWeight: FONT.medium,
-    color: COLORS.textMuted,
     marginTop: 1,
   },
 
-  // Expand Toggle
-  expandToggle: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    marginTop: 4,
-  },
-  expandToggleText: {
-    fontSize: 12,
-    color: COLORS.textSub,
-    fontWeight: FONT.semi,
-  },
-
-  // Expanded details box
-  expandedBox: {
-    backgroundColor: '#F8FAFC',
+  // ── Compact Bill Card ──
+  billCard: {
+    backgroundColor: COLORS.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: SPACING.md,
-    marginTop: 4,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    marginBottom: SPACING.sm,
+  },
+  billCardExpanded: {
+    borderColor: '#CBD5E1',
+  },
+  billHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  billTitleCol: {
+    flex: 1,
+    marginRight: SPACING.sm,
+  },
+  billTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  billPeriod: {
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+  warningPill: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  billMeta: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
+  billHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  billAmountBadge: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+  },
+  billAmountText: {
+    fontSize: 12,
+    fontWeight: FONT.heavy,
+    color: COLORS.text,
+  },
+  chevronIcon: {
+    marginLeft: 6,
+  },
+
+  // ── Compact Key Metrics Strip ──
+  compactMetricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginTop: 8,
+  },
+  metricItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  metricLabel: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    fontWeight: FONT.medium,
+    textTransform: 'uppercase',
+  },
+  metricVal: {
+    fontSize: 12,
+    fontWeight: FONT.bold,
+  },
+  metricUnit: {
+    fontSize: 10,
+    fontWeight: FONT.regular,
+    color: COLORS.textMuted,
+  },
+  metricDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: '#E2E8F0',
+  },
+
+  // ── Expanded Drawer ──
+  expandedDrawer: {
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.xs + 2,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F6',
   },
   expandedSection: {
     fontSize: 10,
     fontWeight: FONT.heavy,
     color: COLORS.textMuted,
-    letterSpacing: 0.6,
-    marginBottom: SPACING.xs,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+    marginTop: 6,
   },
   noteText: {
     fontSize: 11,
     color: COLORS.textSub,
     fontStyle: 'italic',
-    marginTop: SPACING.sm,
+    marginTop: SPACING.xs + 2,
   },
   deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
+    gap: 5,
+    paddingVertical: 7,
     marginTop: SPACING.sm,
     borderTopWidth: 1,
     borderTopColor: '#EEF2F6',
   },
   deleteBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     color: COLORS.danger,
     fontWeight: FONT.semi,
   },
 
-  // Empty State
+  // ── Empty State ──
   emptyState: {
     backgroundColor: COLORS.card,
     borderRadius: RADIUS.lg,
@@ -372,23 +422,23 @@ const styles = StyleSheet.create({
     ...SHADOW.card,
   },
   emptyIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#FEF3C7',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
   },
   emptyTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: FONT.bold,
     color: COLORS.text,
   },
   emptySub: {
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.textSub,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 17,
   },
 });
