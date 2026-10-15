@@ -3,7 +3,7 @@
 // PRD §4 navigation: Home | Bills | Analytics | Care | Settings
 // Multi-consumer isolation with unique Consumer Number onboarding
 // ============================================================
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -35,11 +35,14 @@ import { ConsumerOnboardingModal } from './src/components/ConsumerOnboardingModa
 // ── Services & Domain ─────────────────────────────────────────
 import {
   getBills,
+  getLocalBills,
   saveBill,
   deleteBill,
   getCleaningEvents,
+  getLocalCleaningEvents,
   saveCleaningEvent,
   getSystemProfile,
+  getLocalSystemProfile,
   saveSystemProfile,
   subscribeToSyncStatus,
   testFirestoreConnection,
@@ -82,21 +85,6 @@ const TABS: NavTab[] = [
   { key: 'settings',  label: 'Settings',  icon: 'settings-outline',     iconActive: 'settings',      color: COLORS.gold },
 ];
 
-// ── Default Care Assessment ───────────────────────────────────
-const DEFAULT_CARE: CareAssessment = {
-  score: 30,
-  state: 'Good',
-  daysSinceLastClean: 0,
-  rationale: 'Awaiting monthly bill or wash logs…',
-  recommendation: '',
-  signals: {
-    cleanlinessRecencySignal: 0,
-    rainFreeSignal: 50,
-    generationDeviationSignal: 30,
-    weatherConfidenceSignal: 40,
-  },
-  assessedAt: Date.now(),
-};
 
 // ── App ───────────────────────────────────────────────────────
 function MainApp() {
@@ -111,7 +99,6 @@ function MainApp() {
   const [profile, setProfile]                         = useState<SystemProfile>(() =>
     createDefaultProfile('')
   );
-  const [careAssessment, setCareAssessment]           = useState<CareAssessment>(DEFAULT_CARE);
   const [syncStatus, setSyncStatus]                   = useState<SyncStatus>({
     isFirestoreConnected: false, lastSyncedAt: null, message: 'Connecting…',
   });
@@ -151,7 +138,7 @@ function MainApp() {
     }
   }, [consumerNumber]);
 
-  // ── Initial load ──────────────────────────────────────────
+  // ── Initial load (Instant Local-First + Background Sync) ──
   useEffect(() => {
     const unsub = subscribeToSyncStatus(setSyncStatus);
 
@@ -160,13 +147,37 @@ function MainApp() {
         const savedConsumer = await loadStoredConsumerNumber();
         if (savedConsumer) {
           setConsumerNumber(savedConsumer);
-          await loadAll(savedConsumer);
+
+          // 1. Instant local load (< 15ms) so user never waits
+          const [localBills, localCleanings, localProfile] = await Promise.all([
+            getLocalBills(savedConsumer),
+            getLocalCleaningEvents(savedConsumer),
+            getLocalSystemProfile(savedConsumer),
+          ]);
+
+          if (localBills.length > 0) setBills(localBills);
+          if (localCleanings.length > 0) setCleanings(localCleanings);
+          if (localProfile) {
+            setProfile(localProfile);
+          } else {
+            setProfile(createDefaultProfile(savedConsumer));
+          }
+
+          // Unblock UI immediately — 0 second wait time!
+          setIsInitializing(false);
+
+          // 2. Silent background cloud sync (does not block user interaction)
+          loadAll(savedConsumer)
+            .then(() => testFirestoreConnection())
+            .catch((err) => console.log('Background cloud sync:', err?.message));
         } else {
           // No consumer configured yet: show onboarding prompt
           setIsConsumerModalOpen(true);
+          setIsInitializing(false);
+          testFirestoreConnection().catch(() => {});
         }
-        await testFirestoreConnection();
-      } finally {
+      } catch (err) {
+        console.warn('Bootstrap error:', err);
         setIsInitializing(false);
       }
     };
@@ -196,7 +207,7 @@ function MainApp() {
   };
 
   // ── Derive care assessment whenever relevant state changes ──
-  useEffect(() => {
+  const careAssessment = useMemo<CareAssessment>(() => {
     const latestBill = bills.length > 0 ? bills[0] : null;
     const lastCleanedDate =
       profile.lastCleanedDate ??
@@ -213,14 +224,13 @@ function MainApp() {
     const month = new Date().getMonth() + 1;
     const isMonsoon = month >= 6 && month <= 9;
 
-    const result = calculateCleaningScore({
+    return calculateCleaningScore({
       lastCleanedDate,
       isMonsoonSeason: isMonsoon,
       currentMonthAvgKwhPerDay: avgKwhPerDay,
       expectedKwhPerDay,
       monthsOfHistory: bills.length,
     });
-    setCareAssessment(result);
   }, [bills, cleanings, profile]);
 
   const handleRefresh = useCallback(async () => {

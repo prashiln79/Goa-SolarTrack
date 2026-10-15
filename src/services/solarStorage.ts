@@ -16,7 +16,6 @@ import {
   getDoc,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-export type { SyncStatus } from '../types/solar';
 import {
   SolarBill,
   CleaningEvent,
@@ -24,6 +23,17 @@ import {
   SyncStatus,
 } from '../types/solar';
 import { CANONICAL_AUGUST_2026_BILL } from '../domain/energyAccounting';
+
+export type { SyncStatus } from '../types/solar';
+
+function withTimeout<T>(promise: Promise<T>, ms = 3000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Network timeout')), ms)
+    ),
+  ]);
+}
 
 // ── Active Consumer Number State ─────────────────────────────
 const STORAGE_KEY_ACTIVE_CONSUMER = '@goa_solar_active_consumer_number';
@@ -138,7 +148,7 @@ function setSyncStatus(partial: Partial<SyncStatus>) {
 export async function testFirestoreConnection(): Promise<SyncStatus> {
   try {
     const ping = doc(db, 'solar', 'ping');
-    await setDoc(ping, { ts: Date.now(), platform: 'expo-rn' }, { merge: true });
+    await withTimeout(setDoc(ping, { ts: Date.now(), platform: 'expo-rn' }, { merge: true }), 2500);
     const status: SyncStatus = {
       isFirestoreConnected: true,
       lastSyncedAt: new Date(),
@@ -161,6 +171,45 @@ export async function testFirestoreConnection(): Promise<SyncStatus> {
   }
 }
 
+// ── Instant Local Cache Getters (< 15ms) ─────────────────────
+
+export async function getLocalBills(consumerNumber?: string): Promise<SolarBill[]> {
+  const cNum = consumerNumber ?? _activeConsumerNumber ?? 'primary';
+  const keys = getKeys(cNum);
+  try {
+    const raw = await AsyncStorage.getItem(keys.BILLS);
+    if (raw) return JSON.parse(raw) as SolarBill[];
+  } catch (_) {}
+  try {
+    const legacy = await AsyncStorage.getItem('@goa_solar_bills_v2');
+    if (legacy) {
+      const arr = JSON.parse(legacy);
+      if (Array.isArray(arr) && arr.length > 0) return arr as SolarBill[];
+    }
+  } catch (_) {}
+  return [];
+}
+
+export async function getLocalCleaningEvents(consumerNumber?: string): Promise<CleaningEvent[]> {
+  const cNum = consumerNumber ?? _activeConsumerNumber ?? 'primary';
+  const keys = getKeys(cNum);
+  try {
+    const raw = await AsyncStorage.getItem(keys.CLEANINGS);
+    if (raw) return JSON.parse(raw) as CleaningEvent[];
+  } catch (_) {}
+  return [];
+}
+
+export async function getLocalSystemProfile(consumerNumber?: string): Promise<SystemProfile | null> {
+  const cNum = consumerNumber ?? _activeConsumerNumber ?? 'primary';
+  const keys = getKeys(cNum);
+  try {
+    const raw = await AsyncStorage.getItem(keys.PROFILE);
+    if (raw) return JSON.parse(raw) as SystemProfile;
+  } catch (_) {}
+  return null;
+}
+
 // ── Bills (Subcollection: solar/{consumerNumber}/bills) ───────
 
 export async function getBills(consumerNumber?: string): Promise<SolarBill[]> {
@@ -170,7 +219,7 @@ export async function getBills(consumerNumber?: string): Promise<SolarBill[]> {
   // 1. Try Firestore subcollection: solar/{cNum}/bills
   try {
     const billsCol = collection(db, 'solar', cNum, 'bills');
-    const snap = await getDocs(billsCol);
+    const snap = await withTimeout(getDocs(billsCol), 3500);
     let bills = snap.docs
       .map((d) => d.data() as SolarBill)
       .sort((a, b) => new Date(b.periodStart).getTime() - new Date(a.periodStart).getTime());
@@ -178,7 +227,7 @@ export async function getBills(consumerNumber?: string): Promise<SolarBill[]> {
     // Fallback: check legacy flat doc names if subcollection is empty
     if (bills.length === 0) {
       try {
-        const flatSnap = await getDocs(collection(db, 'solar'));
+        const flatSnap = await withTimeout(getDocs(collection(db, 'solar')), 2500);
         const legacy = flatSnap.docs
           .filter(
             (d) =>
@@ -207,25 +256,11 @@ export async function getBills(consumerNumber?: string): Promise<SolarBill[]> {
       return bills;
     }
   } catch (err: any) {
-    console.warn('[Firestore getBills]', err);
+    console.warn('[Firestore getBills]', err?.message ?? err);
   }
 
   // 2. Fallback: local cache for this consumer
-  try {
-    const raw = await AsyncStorage.getItem(keys.BILLS);
-    if (raw) return JSON.parse(raw) as SolarBill[];
-  } catch (_) {}
-
-  // 3. Fallback: legacy cache
-  try {
-    const legacy = await AsyncStorage.getItem('@goa_solar_bills_v2');
-    if (legacy) {
-      const arr = JSON.parse(legacy);
-      if (Array.isArray(arr) && arr.length > 0) return arr as SolarBill[];
-    }
-  } catch (_) {}
-
-  return [];
+  return getLocalBills(cNum);
 }
 
 export async function saveBill(bill: SolarBill, consumerNumber?: string): Promise<void> {
@@ -315,7 +350,7 @@ export async function getCleaningEvents(consumerNumber?: string): Promise<Cleani
 
   try {
     const col = collection(db, 'solar', cNum, 'cleanings');
-    const snap = await getDocs(col);
+    const snap = await withTimeout(getDocs(col), 3500);
     const evts = snap.docs
       .map((d) => d.data() as CleaningEvent)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -326,12 +361,7 @@ export async function getCleaningEvents(consumerNumber?: string): Promise<Cleani
     }
   } catch (_) {}
 
-  try {
-    const raw = await AsyncStorage.getItem(keys.CLEANINGS);
-    if (raw) return JSON.parse(raw) as CleaningEvent[];
-  } catch (_) {}
-
-  return [];
+  return getLocalCleaningEvents(cNum);
 }
 
 export async function saveCleaningEvent(event: CleaningEvent, consumerNumber?: string): Promise<void> {
@@ -368,7 +398,7 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
 
   // 1. Try Firestore: solar/{cNum}
   try {
-    const d = await getDoc(doc(db, 'solar', cNum));
+    const d = await withTimeout(getDoc(doc(db, 'solar', cNum)), 3500);
     if (d.exists()) {
       const p = d.data() as SystemProfile;
       await AsyncStorage.setItem(keys.PROFILE, JSON.stringify(p));
@@ -378,7 +408,7 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
 
   // Also check legacy doc solar/{cNum}_profile
   try {
-    const legacyDoc = await getDoc(doc(db, 'solar', `${cNum}_profile`));
+    const legacyDoc = await withTimeout(getDoc(doc(db, 'solar', `${cNum}_profile`)), 2500);
     if (legacyDoc.exists()) {
       const p = legacyDoc.data() as SystemProfile;
       await setDoc(doc(db, 'solar', cNum), cleanForFirestore(p));
@@ -388,12 +418,7 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
   } catch (_) {}
 
   // 2. Try AsyncStorage
-  try {
-    const raw = await AsyncStorage.getItem(keys.PROFILE);
-    if (raw) return JSON.parse(raw) as SystemProfile;
-  } catch (_) {}
-
-  return null;
+  return getLocalSystemProfile(cNum);
 }
 
 export async function saveSystemProfile(profile: SystemProfile, consumerNumber?: string): Promise<void> {
