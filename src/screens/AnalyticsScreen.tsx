@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SolarBill, SystemProfile } from '../types/solar';
-import { Card, Divider, InfoNote, ProgressBar } from '../components/ui/UIKit';
+import { Card, Badge, Divider, InfoNote, ProgressBar } from '../components/ui/UIKit';
 import {
   buildMonthlyAnalytics,
   buildAnnualAnalytics,
@@ -124,6 +124,36 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
           )
         )
       : 0;
+
+  // ── 12-Month Annual Forecast Calculations ──
+  const billCount = Math.max(1, bills.length);
+  const genBillsCount = Math.max(
+    1,
+    bills.filter((b) => b.generationKwh !== null && b.generationKwh !== undefined).length
+  );
+
+  const monthlyAvgGen =
+    annual.totalGenerationKwh > 0
+      ? annual.totalGenerationKwh / genBillsCount
+      : (profile.capacityKw || 5) * 120;
+  const forecastAnnualGen = Math.round(monthlyAvgGen * 12);
+
+  const monthlyAvgDirect = annual.totalDirectUseKwh / billCount;
+  const forecastAnnualDirect = Math.round(monthlyAvgDirect * 12);
+
+  const monthlyAvgExport = annual.totalExportKwh / billCount;
+  const forecastAnnualExport = Math.round(monthlyAvgExport * 12);
+
+  const monthlyAvgImport = annual.totalImportKwh / billCount;
+  const forecastAnnualImport = Math.round(monthlyAvgImport * 12);
+
+  const forecastAnnualSavings = Math.round(payback.annualProjectedSavingsInr);
+  const forecastAnnualBills = Math.round((annual.totalBillsPaid / billCount) * 12);
+  const forecastTotalConsumption = forecastAnnualDirect + forecastAnnualImport;
+  const forecastSelfSufficiencyPct =
+    forecastTotalConsumption > 0
+      ? Math.min(100, Math.max(0, Math.round((forecastAnnualDirect / forecastTotalConsumption) * 100)))
+      : selfSufficiencyPct;
 
   const formatInrCompact = (val: number): string => {
     if (val >= 100000) {
@@ -345,7 +375,101 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
         </Card>
       )}
 
-      {/* ── 3. Monthly Performance Table ── */}
+      {/* ── 3. Annual Forecast (12-Month Outlook) ── */}
+      {bills.length > 0 && (
+        <Card
+          title="Annual Forecast (12 Months)"
+          subtitle={`Projected 1-year solar flow based on ${bills.length} cycle${bills.length === 1 ? '' : 's'}`}
+          style={styles.cardSpacing}
+          badge={<Badge label="12-Mo Forecast" color={COLORS.gold} />}
+        >
+          {/* Projected Savings vs Bills */}
+          <View style={styles.impactRow}>
+            <View style={styles.impactCol}>
+              <Text style={styles.impactLabel}>PROJECTED ANNUAL SAVINGS</Text>
+              <Text style={[styles.impactVal, { color: COLORS.success }]}>
+                ₹{forecastAnnualSavings.toLocaleString('en-IN')}
+              </Text>
+              <Text style={styles.impactSub}>~₹{Math.round(payback.monthlyAverageSavingsInr).toLocaleString('en-IN')}/mo avg</Text>
+            </View>
+            <View style={styles.impactDivider} />
+            <View style={styles.impactCol}>
+              <Text style={styles.impactLabel}>EST. ANNUAL BILLS PAID</Text>
+              <Text style={[styles.impactVal, { color: COLORS.text }]}>
+                ₹{forecastAnnualBills.toLocaleString('en-IN')}
+              </Text>
+              <Text style={styles.impactSub}>Fixed charges & duties</Text>
+            </View>
+          </View>
+
+          <Divider style={{ marginVertical: SPACING.md }} />
+
+          {/* 4 Energy Flow Cards (2x2 Grid) */}
+          <View style={styles.energyFlowGrid}>
+            <View style={styles.flowTile}>
+              <View style={styles.flowTileHeader}>
+                <View style={[styles.flowIconBadge, { backgroundColor: '#FEF3C7' }]}>
+                  <Ionicons name="sunny" size={14} color="#D97706" />
+                </View>
+                <Text style={styles.flowTileLabel}>Forecasted Gen</Text>
+              </View>
+              <Text style={[styles.flowTileVal, { color: '#D97706' }]}>
+                {forecastAnnualGen.toLocaleString('en-IN')} <Text style={styles.flowTileUnit}>kWh</Text>
+              </Text>
+            </View>
+
+            <View style={styles.flowTile}>
+              <View style={styles.flowTileHeader}>
+                <View style={[styles.flowIconBadge, { backgroundColor: '#DCFCE7' }]}>
+                  <Ionicons name="flash" size={14} color="#059669" />
+                </View>
+                <Text style={styles.flowTileLabel}>Forecasted Direct Use</Text>
+              </View>
+              <Text style={[styles.flowTileVal, { color: '#059669' }]}>
+                {forecastAnnualDirect.toLocaleString('en-IN')} <Text style={styles.flowTileUnit}>kWh</Text>
+              </Text>
+            </View>
+
+            <View style={styles.flowTile}>
+              <View style={styles.flowTileHeader}>
+                <View style={[styles.flowIconBadge, { backgroundColor: '#ECFDF5' }]}>
+                  <Ionicons name="arrow-up" size={14} color="#059669" />
+                </View>
+                <Text style={styles.flowTileLabel}>Forecasted Export</Text>
+              </View>
+              <Text style={[styles.flowTileVal, { color: COLORS.text }]}>
+                {forecastAnnualExport.toLocaleString('en-IN')} <Text style={styles.flowTileUnit}>kWh</Text>
+              </Text>
+            </View>
+
+            <View style={styles.flowTile}>
+              <View style={styles.flowTileHeader}>
+                <View style={[styles.flowIconBadge, { backgroundColor: '#E0F2FE' }]}>
+                  <Ionicons name="arrow-down" size={14} color="#0284C7" />
+                </View>
+                <Text style={styles.flowTileLabel}>Forecasted Import</Text>
+              </View>
+              <Text style={[styles.flowTileVal, { color: COLORS.text }]}>
+                {forecastAnnualImport.toLocaleString('en-IN')} <Text style={styles.flowTileUnit}>kWh</Text>
+              </Text>
+            </View>
+          </View>
+
+          {/* Forecasted Self-Sufficiency */}
+          <View style={styles.selfSuffBox}>
+            <View style={styles.selfSuffHeader}>
+              <Text style={styles.selfSuffLabel}>Projected Self-Sufficiency</Text>
+              <Text style={[styles.selfSuffPct, { color: '#059669' }]}>{forecastSelfSufficiencyPct}%</Text>
+            </View>
+            <ProgressBar value={forecastSelfSufficiencyPct} color="#059669" height={7} />
+            <Text style={styles.selfSuffNote}>
+              Expected percentage of total household electricity met directly by rooftop solar over 12 months.
+            </Text>
+          </View>
+        </Card>
+      )}
+
+      {/* ── 4. Monthly Performance Table ── */}
       {tableRows.length > 0 && (
         <Card
           title="Monthly Performance"
