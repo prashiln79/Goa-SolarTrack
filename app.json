@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.prashiln79.goasolartrack",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#0B192C",
         "foregroundImage": "./assets/android-icon-foreground.png",
