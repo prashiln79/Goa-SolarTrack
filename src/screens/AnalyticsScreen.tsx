@@ -1,11 +1,19 @@
 // ============================================================
-// Analytics Screen — Clean & Simplified UI (PRD §13)
+// Analytics Screen — Clean, Minimal, and Spacious Layout
 // Monthly analytics table + annual aggregate + Solar ROI & Payback
 // ============================================================
 import React, { useState, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Modal, TextInput, Alert, Platform, KeyboardAvoidingView,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Modal,
+  TextInput,
+  Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SolarBill, SystemProfile } from '../types/solar';
@@ -26,7 +34,10 @@ interface AnalyticsScreenProps {
 }
 
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
-  bills, profile, cleaningEventCount, onProfileSave,
+  bills,
+  profile,
+  cleaningEventCount,
+  onProfileSave,
 }) => {
   const monthlyRows = useMemo(
     () => buildMonthlyAnalytics(bills, profile.capacityKw),
@@ -131,14 +142,17 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.pageTitle}>Solar Analytics</Text>
-      <Text style={styles.pageSub}>
-        Summary across {bills.length} billing cycle{bills.length === 1 ? '' : 's'}
-      </Text>
+      {/* ── Page Header ── */}
+      <View style={styles.topBar}>
+        <Text style={styles.pageTitle}>Solar Analytics</Text>
+        <Text style={styles.pageSub}>
+          Summary across {bills.length} billing cycle{bills.length === 1 ? '' : 's'}
+        </Text>
+      </View>
 
       {/* ── 1. Solar Investment & Payback Timeline ── */}
       <Card
-        title="Solar Investment & Payback"
+        title="Investment & Payback"
         subtitle={
           payback.isFullyRecovered
             ? 'Capital fully recovered!'
@@ -146,15 +160,16 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
             ? `Target break-even: ${payback.breakEvenDate} (${payback.yearsRemainingFormatted})`
             : `Target break-even: ${payback.breakEvenDate}`
         }
+        style={styles.cardSpacing}
         badge={
           <View style={[styles.badge, payback.isFullyRecovered ? styles.badgeSuccess : styles.badgeGold]}>
-            <Text style={[styles.badgeText, payback.isFullyRecovered ? { color: COLORS.success } : { color: COLORS.gold }]}>
+            <Text style={[styles.badgeText, payback.isFullyRecovered ? { color: COLORS.success } : { color: '#D97706' }]}>
               {payback.isFullyRecovered ? '🎉 100% Free Power' : `${payback.recoveryPct}% Recovered`}
             </Text>
           </View>
         }
       >
-        {/* Recovery Progress */}
+        {/* Recovery Progress Bar */}
         <View style={styles.recoveryBox}>
           <View style={styles.recoveryHeader}>
             <Text style={styles.recoveryTitle}>Capital Recovery Progress</Text>
@@ -165,6 +180,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
           <ProgressBar
             value={payback.recoveryPct}
             color={payback.isFullyRecovered ? COLORS.success : COLORS.gold}
+            height={7}
           />
           <View style={styles.recoveryFooter}>
             <Text style={styles.footerMarker}>
@@ -173,15 +189,20 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
             <Text style={styles.footerMarker}>
               {payback.remainingInr > 0 ? `₹${payback.remainingInr.toLocaleString('en-IN')} left` : 'Fully recovered'}
             </Text>
-            <Text style={[styles.footerMarker, { color: payback.isFullyRecovered ? COLORS.success : COLORS.gold, fontWeight: FONT.semi }]}>
+            <Text
+              style={[
+                styles.footerMarker,
+                { color: payback.isFullyRecovered ? COLORS.success : '#D97706', fontWeight: FONT.semi },
+              ]}
+            >
               {payback.isFullyRecovered ? 'Free Electricity' : payback.breakEvenDate}
             </Text>
           </View>
         </View>
 
-        {/* 3 Metrics: Invested, Recovered, Savings */}
-        <View style={styles.metricRow}>
-          <View style={styles.metricCard}>
+        {/* 3 Metric Tiles: Invested, Recovered, Savings */}
+        <View style={styles.metricGrid}>
+          <View style={styles.metricTile}>
             <Text style={styles.metricLabel}>INVESTMENT</Text>
             <Text style={styles.metricVal}>{formatInrCompact(payback.systemCostInr)}</Text>
             <TouchableOpacity
@@ -193,14 +214,12 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
               }}
               activeOpacity={0.7}
             >
-              <Ionicons name="pencil" size={11} color={COLORS.gold} />
-              <Text style={styles.editPillText}>Edit Cost</Text>
+              <Ionicons name="pencil" size={10} color="#D97706" />
+              <Text style={styles.editPillText}>Edit</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.statSep} />
-
-          <View style={styles.metricCard}>
+          <View style={styles.metricTile}>
             <Text style={styles.metricLabel}>RECOVERED</Text>
             <Text style={[styles.metricVal, { color: COLORS.success }]}>
               {formatInrCompact(payback.recoveredSoFarInr)}
@@ -208,20 +227,18 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
             <Text style={styles.metricSub}>{payback.recoveryPct}% recovered</Text>
           </View>
 
-          <View style={styles.statSep} />
-
-          <View style={styles.metricCard}>
+          <View style={styles.metricTile}>
             <Text style={styles.metricLabel}>ANNUAL SAVINGS</Text>
-            <Text style={[styles.metricVal, { color: COLORS.gold }]}>
+            <Text style={[styles.metricVal, { color: '#D97706' }]}>
               {formatInrCompact(payback.annualProjectedSavingsInr)}
             </Text>
             <Text style={styles.metricSub}>~₹{Math.round(payback.monthlyAverageSavingsInr).toLocaleString('en-IN')}/mo</Text>
           </View>
         </View>
 
-        {/* Lifetime Profit Highlight */}
+        {/* Lifetime Profit Highlight Banner */}
         <View style={styles.lifetimeBanner}>
-          <Ionicons name="sparkles" size={16} color={COLORS.gold} />
+          <Ionicons name="sparkles" size={15} color="#D97706" />
           <Text style={styles.lifetimeText}>
             Est. 25-Year Net Profit:{' '}
             <Text style={styles.lifetimeVal}>
@@ -232,14 +249,15 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
       </Card>
 
       {bills.length === 0 && (
-        <InfoNote text="Add your first monthly bill to see analytics." color={COLORS.info} />
+        <InfoNote text="Add your first monthly bill to see analytics." color={COLORS.info} style={styles.cardSpacing} />
       )}
 
-      {/* ── 2. Annual Summary (Energy & Financials) ── */}
+      {/* ── 2. Lifetime / Annual Summary ── */}
       {bills.length > 0 && (
         <Card
-          title="Lifetime / Annual Summary"
+          title="Lifetime Summary"
           subtitle="Aggregate figures across all bills"
+          style={styles.cardSpacing}
         >
           {/* Savings vs Bills Paid */}
           <View style={styles.impactRow}>
@@ -256,27 +274,70 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
               <Text style={[styles.impactVal, { color: COLORS.text }]}>
                 ₹{Math.round(annual.totalBillsPaid).toLocaleString('en-IN')}
               </Text>
-              <Text style={styles.impactSub}>Fixed charges, duties</Text>
+              <Text style={styles.impactSub}>Fixed charges & duties</Text>
             </View>
           </View>
 
-          <Divider style={{ marginVertical: SPACING.sm }} />
+          <Divider style={{ marginVertical: SPACING.md }} />
 
-          {/* 4 Energy Flow Cards */}
+          {/* 4 Energy Flow Cards (2x2 Grid) */}
           <View style={styles.energyFlowGrid}>
-            <FlowItem label="Total Generated" value={annual.totalGenerationKwh} color={COLORS.generation} icon="sunny-outline" />
-            <FlowItem label="Direct Solar Use" value={annual.totalDirectUseKwh} color={COLORS.directUse} icon="flash-outline" />
-            <FlowItem label="Total Exported" value={annual.totalExportKwh} color={COLORS.export} icon="arrow-up-outline" />
-            <FlowItem label="Total Imported" value={annual.totalImportKwh} color={COLORS.import} icon="arrow-down-outline" />
+            <View style={styles.flowTile}>
+              <View style={styles.flowTileHeader}>
+                <View style={[styles.flowIconBadge, { backgroundColor: '#FEF3C7' }]}>
+                  <Ionicons name="sunny" size={14} color="#D97706" />
+                </View>
+                <Text style={styles.flowTileLabel}>Total Generated</Text>
+              </View>
+              <Text style={[styles.flowTileVal, { color: '#D97706' }]}>
+                {annual.totalGenerationKwh} <Text style={styles.flowTileUnit}>kWh</Text>
+              </Text>
+            </View>
+
+            <View style={styles.flowTile}>
+              <View style={styles.flowTileHeader}>
+                <View style={[styles.flowIconBadge, { backgroundColor: '#DCFCE7' }]}>
+                  <Ionicons name="flash" size={14} color="#059669" />
+                </View>
+                <Text style={styles.flowTileLabel}>Direct Solar Use</Text>
+              </View>
+              <Text style={[styles.flowTileVal, { color: '#059669' }]}>
+                {annual.totalDirectUseKwh} <Text style={styles.flowTileUnit}>kWh</Text>
+              </Text>
+            </View>
+
+            <View style={styles.flowTile}>
+              <View style={styles.flowTileHeader}>
+                <View style={[styles.flowIconBadge, { backgroundColor: '#ECFDF5' }]}>
+                  <Ionicons name="arrow-up" size={14} color="#059669" />
+                </View>
+                <Text style={styles.flowTileLabel}>Total Exported</Text>
+              </View>
+              <Text style={[styles.flowTileVal, { color: COLORS.text }]}>
+                {annual.totalExportKwh} <Text style={styles.flowTileUnit}>kWh</Text>
+              </Text>
+            </View>
+
+            <View style={styles.flowTile}>
+              <View style={styles.flowTileHeader}>
+                <View style={[styles.flowIconBadge, { backgroundColor: '#E0F2FE' }]}>
+                  <Ionicons name="arrow-down" size={14} color="#0284C7" />
+                </View>
+                <Text style={styles.flowTileLabel}>Total Imported</Text>
+              </View>
+              <Text style={[styles.flowTileVal, { color: COLORS.text }]}>
+                {annual.totalImportKwh} <Text style={styles.flowTileUnit}>kWh</Text>
+              </Text>
+            </View>
           </View>
 
-          {/* Self-Sufficiency */}
+          {/* Direct Solar Self-Sufficiency */}
           <View style={styles.selfSuffBox}>
             <View style={styles.selfSuffHeader}>
               <Text style={styles.selfSuffLabel}>Direct Solar Self-Sufficiency</Text>
-              <Text style={[styles.selfSuffPct, { color: COLORS.directUse }]}>{selfSufficiencyPct}%</Text>
+              <Text style={[styles.selfSuffPct, { color: '#059669' }]}>{selfSufficiencyPct}%</Text>
             </View>
-            <ProgressBar value={selfSufficiencyPct} color={COLORS.directUse} />
+            <ProgressBar value={selfSufficiencyPct} color="#059669" height={7} />
             <Text style={styles.selfSuffNote}>
               Percentage of total electricity needs met directly by daytime solar.
             </Text>
@@ -287,39 +348,41 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
       {/* ── 3. Monthly Performance Table ── */}
       {tableRows.length > 0 && (
         <Card
-          title="Monthly Performance Table"
-          subtitle="Cycle-by-cycle generation, credits and bills"
+          title="Monthly Performance"
+          subtitle="Cycle-by-cycle generation, credits, and bills"
+          style={styles.cardSpacing}
         >
-          <View style={styles.tableRow}>
+          <View style={styles.tableHeaderRow}>
             <Text style={[styles.th, { flex: 1.6 }]}>Period</Text>
             <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Gen</Text>
             <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Export</Text>
-            <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Closing</Text>
+            <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Credit</Text>
             <Text style={[styles.th, { flex: 1.2, textAlign: 'right' }]}>Bill</Text>
           </View>
-          <Divider />
 
           {tableRows.map((row, idx) => (
-            <View key={row.period}>
+            <View key={row.period} style={styles.tableRowContainer}>
               <View style={styles.tableRow}>
                 <View style={{ flex: 1.6 }}>
                   <Text style={styles.tdPeriod} numberOfLines={1}>{row.period}</Text>
                   {row.monthOverMonthChangePct !== null && (
-                    <Text style={[
-                      styles.trendBadge,
-                      { color: row.monthOverMonthChangePct >= 0 ? COLORS.success : COLORS.danger }
-                    ]}>
+                    <Text
+                      style={[
+                        styles.trendBadge,
+                        { color: row.monthOverMonthChangePct >= 0 ? COLORS.success : COLORS.danger },
+                      ]}
+                    >
                       {row.monthOverMonthChangePct >= 0 ? '▲' : '▼'} {Math.abs(row.monthOverMonthChangePct)}%
                     </Text>
                   )}
                 </View>
-                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: COLORS.generation, fontWeight: FONT.semi }]}>
+                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: '#D97706', fontWeight: FONT.semi }]}>
                   {row.generationKwh !== null ? row.generationKwh : '—'}
                 </Text>
-                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: COLORS.export }]}>
+                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: COLORS.text }]}>
                   {row.exportKwh}
                 </Text>
-                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: COLORS.gold }]}>
+                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: '#059669', fontWeight: FONT.medium }]}>
                   {row.closingCreditKwh}
                 </Text>
                 <Text style={[styles.td, { flex: 1.2, textAlign: 'right', fontWeight: FONT.bold }]}>
@@ -327,9 +390,11 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                 </Text>
               </View>
               {row.avgGenerationPerDay !== null && (
-                <Text style={styles.avgDay}>  {row.avgGenerationPerDay} kWh/day avg • {row.billingDays} days</Text>
+                <Text style={styles.avgDay}>
+                  {row.avgGenerationPerDay} kWh/day avg · {row.billingDays} days
+                </Text>
               )}
-              {idx < tableRows.length - 1 && <Divider style={{ marginVertical: 2 }} />}
+              {idx < tableRows.length - 1 && <View style={styles.tableDivider} />}
             </View>
           ))}
 
@@ -337,7 +402,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
             <InfoNote
               text="Month-over-month trend (▲▼%) will appear after 3+ completed billing cycles. PRD §8.1."
               color={COLORS.info}
-              style={{ marginTop: SPACING.sm }}
+              style={{ marginTop: SPACING.md }}
             />
           )}
         </Card>
@@ -371,7 +436,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                 placeholderTextColor={COLORS.textMuted}
               />
               <InfoNote
-                text="Enter the net capital expenditure for your rooftop solar system after central PM Surya Ghar and state subsidies. Default benchmark for Goa is ₹55,000 / kW."
+                text="Enter net capital expenditure for your rooftop solar system after central PM Surya Ghar and state subsidies. Default benchmark for Goa is ₹55,000 / kW."
                 color={COLORS.gold}
                 style={{ marginTop: SPACING.md }}
               />
@@ -403,35 +468,59 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
   );
 };
 
-const FlowItem: React.FC<{ label: string; value: number; color: string; icon: string }> = ({
-  label, value, color, icon,
-}) => (
-  <View style={styles.flowItem}>
-    <Ionicons name={icon as any} size={15} color={color} />
-    <Text style={styles.flowLabel}>{label}</Text>
-    <Text style={[styles.flowValue, { color }]}>{value} <Text style={styles.flowUnit}>kWh</Text></Text>
-  </View>
-);
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: SPACING.lg, paddingBottom: SPACING.xxl + 20, gap: SPACING.md },
-  pageTitle: { fontSize: 22, fontWeight: FONT.heavy, color: COLORS.text, marginBottom: 2 },
-  pageSub: { fontSize: 13, color: COLORS.textSub },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  content: {
+    padding: SPACING.md,
+    paddingBottom: SPACING.xxl + 24,
+  },
+  topBar: {
+    marginBottom: SPACING.md,
+    paddingHorizontal: 2,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: FONT.heavy,
+    color: COLORS.text,
+  },
+  pageSub: {
+    fontSize: 12,
+    color: COLORS.textSub,
+    marginTop: 2,
+  },
+  cardSpacing: {
+    marginBottom: SPACING.lg,
+  },
 
   badge: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADIUS.full,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
   },
-  badgeSuccess: { backgroundColor: `${COLORS.success}20`, borderWidth: 1, borderColor: `${COLORS.success}44` },
-  badgeGold: { backgroundColor: `${COLORS.gold}20`, borderWidth: 1, borderColor: `${COLORS.gold}44` },
-  badgeText: { fontSize: 11, fontWeight: FONT.bold },
+  badgeSuccess: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  badgeGold: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+  },
 
   // Recovery Section
   recoveryBox: {
-    backgroundColor: COLORS.surfaceRaised,
+    backgroundColor: '#F8FAFC',
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
+    borderColor: '#EEF2F6',
     padding: SPACING.md,
     marginBottom: SPACING.md,
   },
@@ -441,67 +530,73 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  recoveryTitle: { fontSize: 12, fontWeight: FONT.semi, color: COLORS.text },
-  recoveryPctText: { fontSize: 14, fontWeight: FONT.heavy, color: COLORS.gold },
+  recoveryTitle: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.text,
+  },
+  recoveryPctText: {
+    fontSize: 14,
+    fontWeight: FONT.heavy,
+    color: '#D97706',
+  },
   recoveryFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 6,
   },
-  footerMarker: { fontSize: 10, color: COLORS.textMuted },
+  footerMarker: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+  },
 
-  // 3-Metric Row
-  metricRow: {
+  // 3-Metric Grid
+  metricGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surfaceRaised,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.xs,
+    gap: SPACING.sm,
     marginBottom: SPACING.md,
   },
-  metricCard: {
+  metricTile: {
     flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     alignItems: 'center',
-    paddingVertical: 2,
   },
   metricLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: FONT.semi,
     color: COLORS.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
   metricVal: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: FONT.heavy,
     color: COLORS.text,
     marginVertical: 3,
   },
   metricSub: {
-    fontSize: 9,
+    fontSize: 10,
     color: COLORS.textMuted,
-  },
-  statSep: {
-    width: 1,
-    height: 32,
-    backgroundColor: COLORS.border,
   },
   editPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: `${COLORS.gold}18`,
+    backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: RADIUS.full,
+    marginTop: 2,
   },
   editPillText: {
     fontSize: 10,
     fontWeight: FONT.bold,
-    color: COLORS.gold,
+    color: '#D97706',
   },
 
   // Lifetime Banner
@@ -510,65 +605,187 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: `${COLORS.gold}10`,
+    backgroundColor: '#FFFBEB',
     borderWidth: 1,
-    borderColor: `${COLORS.gold}25`,
-    padding: SPACING.sm,
+    borderColor: '#FDE68A',
+    paddingVertical: 10,
+    paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.md,
   },
-  lifetimeText: { fontSize: 12, color: COLORS.textSub },
-  lifetimeVal: { fontWeight: FONT.heavy, color: COLORS.success },
+  lifetimeText: {
+    fontSize: 12,
+    color: COLORS.textSub,
+  },
+  lifetimeVal: {
+    fontWeight: FONT.heavy,
+    color: '#059669',
+  },
 
   // Financial Impact (Savings vs Paid)
-  impactRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.xs },
-  impactCol: { flex: 1, alignItems: 'center' },
-  impactDivider: { width: 1, height: 44, backgroundColor: COLORS.border },
-  impactLabel: { fontSize: 10, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
-  impactVal: { fontSize: 20, fontWeight: FONT.heavy, marginTop: 2 },
-  impactSub: { fontSize: 10, color: COLORS.textMuted, marginTop: 2 },
-
-  // Energy Flow Grid
-  energyFlowGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs, marginVertical: SPACING.xs },
-  flowItem: {
+  impactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.xs,
+  },
+  impactCol: {
     flex: 1,
-    minWidth: '47%',
-    backgroundColor: COLORS.surfaceRaised,
+    alignItems: 'center',
+  },
+  impactDivider: {
+    width: 1,
+    height: 42,
+    backgroundColor: '#E2E8F0',
+  },
+  impactLabel: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    fontWeight: FONT.semi,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  impactVal: {
+    fontSize: 20,
+    fontWeight: FONT.heavy,
+    marginTop: 3,
+  },
+  impactSub: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+
+  // Energy Flow Grid (2x2)
+  energyFlowGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  flowTile: {
+    width: '48%',
+    flexGrow: 1,
+    backgroundColor: '#F8FAFC',
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-    padding: SPACING.sm,
-    alignItems: 'center',
-    gap: 2,
+    borderColor: '#EEF2F6',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  flowLabel: { fontSize: 10, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
-  flowValue: { fontSize: 14, fontWeight: FONT.heavy },
-  flowUnit: { fontSize: 10, fontWeight: FONT.regular, color: COLORS.textMuted },
+  flowTileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  flowIconBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flowTileLabel: {
+    fontSize: 11,
+    color: COLORS.textSub,
+    fontWeight: FONT.medium,
+  },
+  flowTileVal: {
+    fontSize: 16,
+    fontWeight: FONT.heavy,
+    marginTop: 2,
+  },
+  flowTileUnit: {
+    fontSize: 11,
+    fontWeight: FONT.regular,
+    color: COLORS.textMuted,
+  },
 
   // Self-Sufficiency
   selfSuffBox: {
-    backgroundColor: COLORS.surfaceRaised,
+    backgroundColor: '#F8FAFC',
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
+    borderColor: '#EEF2F6',
     padding: SPACING.md,
-    marginTop: SPACING.xs,
     gap: 6,
   },
-  selfSuffHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  selfSuffLabel: { fontSize: 12, fontWeight: FONT.semi, color: COLORS.text },
-  selfSuffPct: { fontSize: 15, fontWeight: FONT.heavy },
-  selfSuffNote: { fontSize: 10, color: COLORS.textMuted, lineHeight: 14 },
+  selfSuffHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  selfSuffLabel: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.text,
+  },
+  selfSuffPct: {
+    fontSize: 14,
+    fontWeight: FONT.heavy,
+  },
+  selfSuffNote: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    lineHeight: 15,
+  },
 
   // Table
-  tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4 },
-  th: { fontSize: 10, fontWeight: FONT.heavy, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
-  tdPeriod: { fontSize: 12, fontWeight: FONT.semi, color: COLORS.text },
-  trendBadge: { fontSize: 9, fontWeight: FONT.bold, marginTop: 1 },
-  td: { fontSize: 12, color: COLORS.text },
-  avgDay: { fontSize: 10, color: COLORS.textMuted, paddingHorizontal: 4, paddingBottom: 4 },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  th: {
+    fontSize: 10,
+    fontWeight: FONT.heavy,
+    color: COLORS.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  tableRowContainer: {
+    paddingVertical: 6,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+  },
+  tdPeriod: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.text,
+  },
+  trendBadge: {
+    fontSize: 9,
+    fontWeight: FONT.bold,
+    marginTop: 1,
+  },
+  td: {
+    fontSize: 12,
+    color: COLORS.text,
+  },
+  avgDay: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    paddingHorizontal: 4,
+    marginTop: 2,
+  },
+  tableDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginTop: 6,
+  },
 
   // Edit Modal
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
   sheet: {
     backgroundColor: COLORS.surface,
     borderTopLeftRadius: RADIUS.xl,
@@ -584,9 +801,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  sheetTitle: { fontSize: 18, fontWeight: FONT.bold, color: COLORS.text },
-  sheetBody: { padding: SPACING.lg },
-  fieldLabel: { fontSize: 11, fontWeight: FONT.semi, color: COLORS.textSub, marginBottom: 6 },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+  sheetBody: {
+    padding: SPACING.lg,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.textSub,
+    marginBottom: 6,
+  },
   input: {
     backgroundColor: COLORS.surfaceRaised,
     borderWidth: 1,
@@ -595,7 +823,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: 10,
     color: COLORS.text,
-    fontSize: 14,
+    fontSize: 15,
   },
   sheetFooter: {
     flexDirection: 'row',
@@ -605,8 +833,30 @@ const styles = StyleSheet.create({
     borderTopColor: COLORS.border,
     paddingBottom: Platform.OS === 'ios' ? SPACING.xl : SPACING.lg,
   },
-  cancelBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border },
-  cancelBtnText: { fontSize: 14, fontWeight: FONT.semi, color: COLORS.textSub },
-  saveBtn: { flex: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.gold, padding: 12, borderRadius: RADIUS.md },
-  saveBtnText: { fontSize: 14, fontWeight: FONT.bold, color: COLORS.textInverse },
+  cancelBtn: {
+    flex: 1,
+    padding: 12,
+    alignItems: 'center',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  cancelBtnText: {
+    fontSize: 14,
+    fontWeight: FONT.semi,
+    color: COLORS.textSub,
+  },
+  saveBtn: {
+    flex: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.gold,
+    padding: 12,
+    borderRadius: RADIUS.md,
+  },
+  saveBtnText: {
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: COLORS.textInverse,
+  },
 });

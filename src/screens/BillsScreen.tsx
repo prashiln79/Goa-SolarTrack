@@ -1,15 +1,22 @@
 // ============================================================
 // Bills Screen — History of all monthly bills
 // PRD §3.2 / §13.1 monthly analytics
+// Clean, minimal, and intuitive design
 // ============================================================
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SolarBill } from '../types/solar';
 import { Card, Divider, LedgerRow, InfoNote } from '../components/ui/UIKit';
-import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
+import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
 
 interface BillsScreenProps {
   bills: SolarBill[];
@@ -18,7 +25,9 @@ interface BillsScreenProps {
 }
 
 export const BillsScreen: React.FC<BillsScreenProps> = ({
-  bills, onAddBill, onDeleteBill,
+  bills,
+  onAddBill,
+  onDeleteBill,
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -27,7 +36,10 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
 
   const confirmDelete = (bill: SolarBill) => {
     if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(`Remove the record for ${bill.period}? This cannot be undone.`)) {
+      if (
+        typeof window !== 'undefined' &&
+        window.confirm(`Remove the record for ${bill.period}? This cannot be undone.`)
+      ) {
         onDeleteBill(bill.id);
       }
       return;
@@ -58,6 +70,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      {/* ── Page Header ── */}
       <View style={styles.topBar}>
         <View>
           <Text style={styles.pageTitle}>Monthly Bills</Text>
@@ -65,81 +78,106 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
             {bills.length} billing cycle{bills.length === 1 ? '' : 's'} recorded
           </Text>
         </View>
-        {/* <TouchableOpacity id="btn-add-bill-bills" style={styles.addBtn} onPress={onAddBill}>
-          <Ionicons name="add" size={16} color={COLORS.textInverse} />
-          <Text style={styles.addBtnText}>New Bill</Text>
-        </TouchableOpacity> */}
       </View>
 
+      {/* ── Empty State ── */}
       {bills.length === 0 && (
         <View style={styles.emptyState}>
-          <Ionicons name="document-text-outline" size={40} color={COLORS.textMuted} />
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="document-text-outline" size={36} color={COLORS.gold} />
+          </View>
           <Text style={styles.emptyTitle}>No bills recorded yet</Text>
           <Text style={styles.emptySub}>
-            Tap "New Bill" or use the Add Bill button to enter your first monthly Goa electricity bill.
+            Tap &apos;New Bill&apos; or use the Add Bill button to enter your first monthly Goa electricity bill.
           </Text>
         </View>
       )}
 
+      {/* ── Bills List ── */}
       {bills.map((bill) => {
         const expanded = expandedId === bill.id;
-        const days = bill.billingDays || 31;
+        const readInterval =
+          bill.periodStart && bill.periodEnd
+            ? `${bill.periodStart} – ${bill.periodEnd}`
+            : null;
 
         return (
           <Card
             key={bill.id}
             title={bill.period}
-            subtitle={`Bill #${bill.billNumber ?? 'N/A'}${bill.periodStart && bill.periodEnd ? ` · ${bill.periodStart} to ${bill.periodEnd}` : ''} · Due: ${bill.dueDate ?? 'N/A'}`}
+            subtitle={
+              readInterval
+                ? `Readings: ${readInterval} (${bill.billingDays || 31}d)`
+                : `Bill #${bill.billNumber ?? 'N/A'} · Due: ${bill.dueDate ?? 'N/A'}`
+            }
+            style={styles.cardSpacing}
             badge={
               <View style={styles.amountBadge}>
                 <Text style={styles.amountBadgeText}>₹{bill.billAmount.toFixed(0)}</Text>
               </View>
             }
           >
-            {/* ── 3-column summary ── */}
+            {/* ── 3 Key Metric Tiles ── */}
             <View style={styles.summaryGrid}>
-              <SummaryCol
-                label="Solar Gen" value={bill.generationKwh !== null ? `${bill.generationKwh}` : 'N/A'}
-                unit={bill.generationKwh !== null ? 'kWh' : ''} color={COLORS.generation}
-              />
-              <SummaryCol label="Exported" value={`${bill.exportKwh}`} unit="kWh" color={COLORS.export} />
-              <SummaryCol
-                label="Closing Credit" value={`${bill.closingCreditKwh}`} unit="kWh" color={COLORS.gold}
-              />
+              <View style={styles.summaryTile}>
+                <Text style={styles.summaryLabel}>Solar Gen</Text>
+                <Text style={[styles.summaryValue, { color: '#D97706' }]}>
+                  {bill.generationKwh !== null ? bill.generationKwh : '—'}
+                </Text>
+                <Text style={styles.summaryUnit}>kWh</Text>
+              </View>
+
+              <View style={styles.summaryTile}>
+                <Text style={styles.summaryLabel}>Exported</Text>
+                <Text style={[styles.summaryValue, { color: COLORS.text }]}>
+                  {bill.exportKwh}
+                </Text>
+                <Text style={styles.summaryUnit}>kWh</Text>
+              </View>
+
+              <View style={styles.summaryTile}>
+                <Text style={styles.summaryLabel}>Banked Credit</Text>
+                <Text style={[styles.summaryValue, { color: '#059669' }]}>
+                  {bill.closingCreditKwh}
+                </Text>
+                <Text style={styles.summaryUnit}>kWh</Text>
+              </View>
             </View>
 
-            {/* ── Expand toggle ── */}
+            {/* ── Expand/Collapse Ledger Toggle ── */}
             <TouchableOpacity
               id={`btn-expand-bill-${bill.id}`}
               style={styles.expandToggle}
               onPress={() => toggle(bill.id)}
+              activeOpacity={0.7}
             >
               <Text style={styles.expandToggleText}>
-                {expanded ? 'Hide energy ledger & charges' : 'Show full energy ledger & charges'}
+                {expanded ? 'Hide ledger & charges' : 'Show full energy ledger & charges'}
               </Text>
               <Ionicons
                 name={expanded ? 'chevron-up' : 'chevron-down'}
                 size={14}
-                color={COLORS.textMuted}
+                color={COLORS.textSub}
               />
             </TouchableOpacity>
 
-            {/* ── Expanded detail ── */}
+            {/* ── Expanded Detail Box ── */}
             {expanded && (
               <View style={styles.expandedBox}>
-                <Text style={styles.expandedSection}>METER READING INTERVAL</Text>
-                {bill.periodStart && bill.periodEnd ? (
-                  <LedgerRow label="Meter Read Period" value={`${bill.periodStart} to ${bill.periodEnd}`} />
+                <Text style={styles.expandedSection}>METER READING & INTERVAL</Text>
+                {readInterval ? (
+                  <LedgerRow label="Meter Read Period" value={readInterval} />
                 ) : null}
                 <LedgerRow label="Billing Days" value={`${bill.billingDays || 31} days`} />
+                {bill.dueDate && <LedgerRow label="Payment Due Date" value={bill.dueDate} />}
 
                 <Divider style={{ marginVertical: SPACING.sm }} />
-                <Text style={styles.expandedSection}>ENERGY LEDGER</Text>
+                <Text style={styles.expandedSection}>ENERGY LEDGER (KWH)</Text>
                 <LedgerRow label="Opening Bank Balance" value={`${bill.openingCreditKwh} kWh`} />
                 <LedgerRow label="+ Current Export" value={`${bill.exportKwh} kWh`} valueColor={COLORS.export} />
                 <LedgerRow label="Available Credit" value={`${bill.availableCreditKwh} kWh`} />
                 <LedgerRow label="− Credit Used (Adjusted)" value={`${bill.adjustedCreditKwh} kWh`} valueColor={COLORS.import} />
-                <LedgerRow label="= Closing Credit Carried →" value={`${bill.closingCreditKwh} kWh`} valueColor={COLORS.gold} />
+                <LedgerRow label="= Closing Banked Credit" value={`${bill.closingCreditKwh} kWh`} valueColor={COLORS.success} />
                 <LedgerRow label="Net Billed Grid Import" value={`${bill.netBilledImportKwh} kWh`} />
                 {bill.directSolarUseKwh !== null && (
                   <LedgerRow
@@ -150,17 +188,17 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
                 )}
 
                 <Divider style={{ marginVertical: SPACING.sm }} />
-                <Text style={styles.expandedSection}>BILL COMPONENTS</Text>
+                <Text style={styles.expandedSection}>BILL COMPONENTS (INR)</Text>
                 {bill.demandCharges !== undefined && (
                   <LedgerRow label="Demand / Fixed Charge" value={`₹${bill.demandCharges.toFixed(2)}`} />
                 )}
                 {bill.fppca !== undefined && (
-                  <LedgerRow label="FPPCA" value={`₹${bill.fppca.toFixed(2)}`} />
+                  <LedgerRow label="FPPCA Charge" value={`₹${bill.fppca.toFixed(2)}`} />
                 )}
                 {bill.rebate !== undefined && bill.rebate !== 0 && (
-                  <LedgerRow label="Rebate" value={`₹${bill.rebate.toFixed(2)}`} valueColor={COLORS.success} />
+                  <LedgerRow label="Prompt Rebate" value={`₹${bill.rebate.toFixed(2)}`} valueColor={COLORS.success} />
                 )}
-                <LedgerRow label="Total Payable" value={`₹${bill.billAmount.toFixed(2)}`} />
+                <LedgerRow label="Total Amount Payable" value={`₹${bill.billAmount.toFixed(2)}`} valueColor={COLORS.text} />
 
                 {bill.needsReview && (
                   <InfoNote
@@ -170,14 +208,15 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
                   />
                 )}
 
-                {bill.notes && (
+                {bill.notes ? (
                   <Text style={styles.noteText}>📝 {bill.notes}</Text>
-                )}
+                ) : null}
 
                 <TouchableOpacity
                   id={`btn-delete-bill-${bill.id}`}
                   style={styles.deleteBtn}
                   onPress={() => confirmDelete(bill)}
+                  activeOpacity={0.7}
                 >
                   <Ionicons name="trash-outline" size={14} color={COLORS.danger} />
                   <Text style={styles.deleteBtnText}>Remove this bill</Text>
@@ -191,64 +230,165 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
   );
 };
 
-const SummaryCol: React.FC<{
-  label: string; value: string; unit: string; color?: string;
-}> = ({ label, value, unit, color = COLORS.text }) => (
-  <View style={styles.summaryCol}>
-    <Text style={styles.summaryColLabel}>{label}</Text>
-    <Text style={[styles.summaryColValue, { color }]}>{value}</Text>
-    {unit ? <Text style={styles.summaryColUnit}>{unit}</Text> : null}
-  </View>
-);
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: SPACING.lg, paddingBottom: SPACING.xxl + 20 },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
-  pageTitle: { fontSize: 20, fontWeight: FONT.heavy, color: COLORS.text },
-  pageSub: { fontSize: 12, color: COLORS.textSub, marginTop: 2 },
-  addBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.gold,
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADIUS.full,
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
-  addBtnText: { fontSize: 13, fontWeight: FONT.bold, color: COLORS.textInverse },
-  emptyState: {
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, borderWidth: 1,
-    borderColor: COLORS.border, padding: SPACING.xl, alignItems: 'center', gap: SPACING.sm,
-    marginTop: SPACING.lg,
+  content: {
+    padding: SPACING.md,
+    paddingBottom: SPACING.xxl + 24,
   },
-  emptyTitle: { fontSize: 16, fontWeight: FONT.bold, color: COLORS.text },
-  emptySub: { fontSize: 12, color: COLORS.textSub, textAlign: 'center' },
+  topBar: {
+    marginBottom: SPACING.md,
+    paddingHorizontal: 2,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: FONT.heavy,
+    color: COLORS.text,
+  },
+  pageSub: {
+    fontSize: 12,
+    color: COLORS.textSub,
+    marginTop: 2,
+  },
+  cardSpacing: {
+    marginBottom: SPACING.lg,
+  },
+
+  // Amount badge
   amountBadge: {
-    backgroundColor: COLORS.glowGold, borderWidth: 1, borderColor: `${COLORS.gold}55`,
-    paddingHorizontal: 10, paddingVertical: 3, borderRadius: RADIUS.full,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
   },
-  amountBadgeText: { fontSize: 13, fontWeight: FONT.bold, color: COLORS.gold },
+  amountBadgeText: {
+    fontSize: 13,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+
+  // 3-tile Summary Row
   summaryGrid: {
-    flexDirection: 'row', backgroundColor: COLORS.surfaceRaised, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.borderSubtle, paddingVertical: SPACING.sm,
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
-  summaryCol: { flex: 1, alignItems: 'center', paddingVertical: SPACING.xs },
-  summaryColLabel: { fontSize: 10, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
-  summaryColValue: { fontSize: 16, fontWeight: FONT.heavy, color: COLORS.text, marginTop: 2 },
-  summaryColUnit: { fontSize: 10, color: COLORS.textMuted },
+  summaryTile: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontWeight: FONT.medium,
+  },
+  summaryValue: {
+    fontSize: 18,
+    fontWeight: FONT.heavy,
+    letterSpacing: -0.3,
+    marginTop: 3,
+  },
+  summaryUnit: {
+    fontSize: 10,
+    fontWeight: FONT.medium,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
+
+  // Expand Toggle
   expandToggle: {
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    gap: 4, paddingVertical: 8, marginTop: SPACING.xs,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 4,
   },
-  expandToggleText: { fontSize: 11, color: COLORS.textSub, fontWeight: FONT.semi },
+  expandToggleText: {
+    fontSize: 12,
+    color: COLORS.textSub,
+    fontWeight: FONT.semi,
+  },
+
+  // Expanded details box
   expandedBox: {
-    backgroundColor: COLORS.surfaceRaised, borderRadius: RADIUS.md, borderWidth: 1,
-    borderColor: COLORS.borderSubtle, padding: SPACING.md,
+    backgroundColor: '#F8FAFC',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: SPACING.md,
+    marginTop: 4,
   },
   expandedSection: {
-    fontSize: 10, fontWeight: FONT.heavy, color: COLORS.textMuted,
-    letterSpacing: 0.6, marginBottom: SPACING.xs,
+    fontSize: 10,
+    fontWeight: FONT.heavy,
+    color: COLORS.textMuted,
+    letterSpacing: 0.6,
+    marginBottom: SPACING.xs,
   },
-  noteText: { fontSize: 11, color: COLORS.textSub, fontStyle: 'italic', marginTop: SPACING.sm },
+  noteText: {
+    fontSize: 11,
+    color: COLORS.textSub,
+    fontStyle: 'italic',
+    marginTop: SPACING.sm,
+  },
   deleteBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 4, paddingVertical: 8, marginTop: SPACING.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F6',
   },
-  deleteBtnText: { fontSize: 11, color: COLORS.danger, fontWeight: FONT.semi },
+  deleteBtnText: {
+    fontSize: 12,
+    color: COLORS.danger,
+    fontWeight: FONT.semi,
+  },
+
+  // Empty State
+  emptyState: {
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.xl,
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.lg,
+    ...SHADOW.card,
+  },
+  emptyIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+  emptySub: {
+    fontSize: 13,
+    color: COLORS.textSub,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
 });
