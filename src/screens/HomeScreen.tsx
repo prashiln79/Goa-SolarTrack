@@ -4,7 +4,8 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import Svg, { Path, Rect, Circle } from "react-native-svg";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+
 import { SolarBill, SystemProfile, CareAssessment } from "../types/solar";
 import { Card, Badge, Divider, InfoNote, ProgressBar, LedgerRow, SolarPanelIcon, GridIcon } from "../components/ui/UIKit";
 import { estimateRetailBill, projectSettlement } from "../domain/tariffEngine";
@@ -49,12 +50,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ bills, profile, careAsse
 
 	const settlement = profile.settlementRateInr ? projectSettlement(bill.closingCreditKwh, profile.settlementRateInr, "FY 2026-27 (1 Apr – 31 Mar)", "31 May 2027") : null;
 
-	// ── Scope toggle for Energy Flow (Latest Month vs All Bills) ──
+	// ── Scope toggle for Energy Overview (Latest Month vs All Bills) ──
 	const [flowScope, setFlowScope] = useState<"month" | "all">("month");
-	const [connectorWidth, setConnectorWidth] = useState(330);
-	const [solarCardLayout, setSolarCardLayout] = useState({ width: 330, height: 58 });
-	const [homeCardLayout, setHomeCardLayout] = useState({ width: 155, height: 140 });
-	const [gridCardLayout, setGridCardLayout] = useState({ width: 155, height: 160 });
 
 	// ── All-time aggregates for the summary strip & all-time flow ──
 	const allTimeGeneration = bills.reduce((sum, b) => sum + (b.generationKwh ?? 0), 0);
@@ -86,114 +83,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ bills, profile, careAsse
 				);
 	const exportAvgPerDay = ((displayExp ?? 0) / exportDays).toFixed(1);
 
-	// Solar card parallelogram SVG path (matching tilted solar panel reference)
-	const sw = solarCardLayout.width || 330;
-	const sh = solarCardLayout.height || 58;
-	const pad = 2;
-	const slant = Math.round(sh * 0.4);
-	const halfBase = Math.round((sw - slant) / 2) - pad;
-	const midX = Math.round(sw / 2);
-
-	const xTL = midX - Math.round(slant / 2) - halfBase;
-	const xTR = midX - Math.round(slant / 2) + halfBase;
-	const xBL = midX + Math.round(slant / 2) - halfBase;
-	const xBR = midX + Math.round(slant / 2) + halfBase;
-	const yT = pad;
-	const yB = sh - pad;
-	const scr = 6;
-	const slopeX = slant / Math.max(1, yB - yT);
-
-	const solarPath = [
-		`M ${xTL + scr} ${yT}`,
-		`L ${xTR - scr} ${yT}`,
-		`Q ${xTR} ${yT} ${Math.round(xTR + scr * slopeX)} ${yT + scr}`,
-		`L ${Math.round(xBR - scr * slopeX)} ${yB - scr}`,
-		`Q ${xBR} ${yB} ${xBR - scr} ${yB}`,
-		`L ${xBL + scr} ${yB}`,
-		`Q ${xBL} ${yB} ${Math.round(xBL - scr * slopeX)} ${yB - scr}`,
-		`L ${Math.round(xTL + scr * slopeX)} ${yT + scr}`,
-		`Q ${xTL} ${yT} ${xTL + scr} ${yT}`,
-		"Z",
-	].join(" ");
-
-	// Square solar cells grid lines (light color background inside parallelogram)
-	const solarRows = 2;
-	const solarCols = 6;
-	const gridSegments: string[] = [];
-	for (let r = 1; r < solarRows; r++) {
-		const y = Math.round(yT + (yB - yT) * (r / solarRows));
-		const xL = Math.round(xTL + (y - yT) * slopeX + 4);
-		const xR = Math.round(xTR + (y - yT) * slopeX - 4);
-		gridSegments.push(`M ${xL} ${y} L ${xR} ${y}`);
-	}
-	for (let c = 1; c < solarCols; c++) {
-		const t = c / solarCols;
-		const xTop = Math.round(xTL + (xTR - xTL) * t);
-		const xBot = Math.round(xBL + (xBR - xBL) * t);
-		gridSegments.push(`M ${xTop} ${yT + 2} L ${xBot} ${yB - 2}`);
-	}
-	const solarGridPath = gridSegments.join(" ");
-
-	// Straight orthogonal connector SVG paths
-	const cx = connectorWidth / 2;
-	const leftTargetX = connectorWidth * 0.25;
-	const rightTargetX = connectorWidth * 0.75;
-	const splitY = 26;
-	const arrowTipY = 48;
-	const leftPath = `M ${cx} 0 L ${cx} ${splitY} L ${leftTargetX} ${splitY} L ${leftTargetX} ${arrowTipY}`;
-	const leftArrow = `M ${leftTargetX - 4} ${arrowTipY - 6} L ${leftTargetX} ${arrowTipY} L ${leftTargetX + 4} ${arrowTipY - 6}`;
-	const rightPath = `M ${cx} 0 L ${cx} ${splitY} L ${rightTargetX} ${splitY} L ${rightTargetX} ${arrowTipY}`;
-	const rightArrow = `M ${rightTargetX - 4} ${arrowTipY - 6} L ${rightTargetX} ${arrowTipY} L ${rightTargetX + 4} ${arrowTipY - 6}`;
-
-	const gw = gridCardLayout.width || 155;
-	const gh = gridCardLayout.height || 160;
-
-	// Bottom Grid -> Home import & Grid -> Battery paths
-	const gridImportX = Math.round(connectorWidth - gw + ((gw - 16) * 0.25 + 8));
-	const gridBatteryX = Math.round(connectorWidth - ((gw - 16) * 0.25 + 8));
-	const importLineY = 20;
-	const importPath = `M ${gridImportX} 0 L ${gridImportX} ${importLineY} L ${leftTargetX} ${importLineY} L ${leftTargetX} 0`;
-	const importArrow = `M ${leftTargetX - 4} 7 L ${leftTargetX} 0 L ${leftTargetX + 4} 7`;
-	const importPillCenterX = Math.round((leftTargetX + gridImportX) / 2);
-
-	const batteryArrowTipY = 38;
-	const batteryPath = `M ${gridBatteryX} 0 L ${gridBatteryX} ${batteryArrowTipY}`;
-	const batteryArrow = `M ${gridBatteryX - 4} ${batteryArrowTipY - 6} L ${gridBatteryX} ${batteryArrowTipY} L ${gridBatteryX + 4} ${batteryArrowTipY - 6}`;
-
-	// Home card house silhouette SVG path (matching reference image)
-	const hw = homeCardLayout.width || 155;
-	const hh = homeCardLayout.height || 160;
-	const hcx = hw / 2;
-	const wallInset = 14;
-	const roofEaveY = Math.round(hh * 0.36);
-	const cr = 14;
-	const slopeWidth = hw - 3 - hcx;
-	const slopeHeight = roofEaveY - 4;
-	// Chimney on right slope: positioned proportionally matching reference icon
-	const chX1 = Math.round(hcx + slopeWidth * 0.32);
-	const chWidth = Math.max(14, Math.round(slopeWidth * 0.2));
-	const chX2 = Math.min(hw - wallInset - 2, chX1 + chWidth);
-	const chY1 = Math.round(4 + ((chX1 - hcx) / slopeWidth) * slopeHeight);
-	const chY2 = Math.round(4 + ((chX2 - hcx) / slopeWidth) * slopeHeight);
-	// Chimney flat top slightly below apex (apex at y=4)
-	const chTop = Math.max(8, Math.round(4 + slopeHeight * 0.14));
-
-	const housePath = [
-		`M ${hcx} 4`,
-		`L ${chX1} ${chY1}`,
-		`L ${chX1} ${chTop}`,
-		`L ${chX2} ${chTop}`,
-		`L ${chX2} ${chY2}`,
-		`L ${hw - 3} ${roofEaveY}`,
-		`L ${hw - wallInset} ${roofEaveY}`,
-		`L ${hw - wallInset} ${hh - cr}`,
-		`Q ${hw - wallInset} ${hh - 3} ${hw - wallInset - cr} ${hh - 3}`,
-		`L ${wallInset + cr} ${hh - 3}`,
-		`Q ${wallInset} ${hh - 3} ${wallInset} ${hh - cr}`,
-		`L ${wallInset} ${roofEaveY}`,
-		`L 3 ${roofEaveY}`,
-		"Z",
-	].join(" ");
+	const billCount = Math.max(1, bills.length);
+	const genBillsCount = Math.max(1, bills.filter((b) => b.generationKwh !== null && b.generationKwh !== undefined).length);
+	const allTimeGenAvgPerMonth = (allTimeGeneration / genBillsCount).toFixed(0);
+	const allTimeHomeAvgPerMonth = (displayHomeConsumption / billCount).toFixed(0);
+	const allTimeImpAvgPerMonth = (allTimeImport / billCount).toFixed(0);
+	const allTimeExpAvgPerMonth = (allTimeExport / billCount).toFixed(0);
 
 	const allTimeTotalBill = bills.reduce((sum, b) => sum + b.billAmount, 0);
 	const allTimeTotalSavings = bills.reduce((sum, b) => {
@@ -234,7 +129,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ bills, profile, careAsse
 			refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[COLORS.gold]} />}
 			showsVerticalScrollIndicator={false}
 		>
-			{/* ─── 1. Energy Overview (3 Simple Questions for Normal Person) ─── */}
+			{/* ─── 1. Energy Overview ─── */}
 			<Card
 				title="Energy Overview"
 				subtitle={flowScope === "month" ? `${bill.period} (Latest Bill)` : `All Bills Total (${bills.length} bills · ${allTimePeriodLabel})`}
@@ -253,314 +148,86 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ bills, profile, careAsse
 					)
 				}
 			>
-				<View style={styles.flowchartWrap}>
-					{/* ─── 1. TOP NODE: SOLAR GENERATED (Slanted Parallelogram Solar Panel) ─── */}
-					<View
-						style={styles.fcSolarCard}
-						onLayout={(e) => {
-							const { width, height } = e.nativeEvent.layout;
-							if (width > 0 && height > 0 && (Math.abs(width - solarCardLayout.width) > 2 || Math.abs(height - solarCardLayout.height) > 2)) {
-								setSolarCardLayout({
-									width: Math.round(width),
-									height: Math.round(height),
-								});
-							}
-						}}
-					>
-						<Svg width={sw} height={sh} style={StyleSheet.absoluteFill}>
-							{/* Outer Parallelogram Panel Frame */}
-							<Path d={solarPath} fill="#FFFBEB" stroke="#F59E0B" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-
-							{/* Square Photovoltaic Cells Grid (Light Color) */}
-							<Path d={solarGridPath} stroke="#FDE68A" strokeWidth={1.3} strokeLinecap="round" />
-						</Svg>
-
-						{/* Same Row: Header (Icon + Label) & Reading Box */}
-						<View style={styles.fcSolarMainRow}>
-							<View style={styles.fcSolarHeaderGroup}>
-								<View style={styles.fcSolarIconBadge}>
-									<Ionicons name="sunny" size={12} color="#F59E0B" />
-								</View>
-								<Text style={styles.fcSolarHeaderLabel}>SOLAR GENERATED</Text>
+				<View style={styles.eoContainer}>
+					{/* Row 1: Generation & Home Use */}
+					<View style={styles.eoRow}>
+						<View style={styles.eoStat}>
+							<View style={styles.eoIconWrap}>
+								<Ionicons name="sunny-outline" size={20} color="#F59E0B" />
 							</View>
-
-							{/* Reading Box */}
-							<View style={styles.fcSolarLcdBox}>
-								<Text style={styles.fcSolarHeroNum}>
-									{displayGen ?? "—"}
-									<Text style={styles.fcSolarHeroUnit}> kWh</Text>
-								</Text>
-							</View>
+							<Text style={styles.eoStatLabel}>Solar generation</Text>
+							<Text style={[styles.eoStatValue, { color: "#D97706" }]}>
+								{displayGen !== null ? displayGen.toFixed(0) : "—"} <Text style={styles.eoStatUnit}>kWh</Text>
+							</Text>
+							<Text style={styles.eoStatNote}>
+								{flowScope === "all"
+									? `${allTimeGenAvgPerMonth} kWh/mo avg`
+									: (avgPerDay ? `${avgPerDay} kWh/day avg` : "Goa meter · kWh_G")}
+							</Text>
 						</View>
-
-						{/* Centered Daily Average */}
-						<View style={styles.fcSolarAvgRow}>
-							<Ionicons name="stats-chart" size={9.5} color="#D97706" />
-							<Text style={styles.fcSolarAvgText}>
-								{flowScope === "month" && avgPerDay ? `${avgPerDay} kWh/day avg` : `${((displayGen ?? 0) / Math.max(1, bills.length * 30)).toFixed(1)} kWh/day avg`}
+						<View style={styles.eoStat}>
+							<View style={styles.eoIconWrap}>
+								<Ionicons name="home-outline" size={20} color="#10B981" />
+							</View>
+							<Text style={styles.eoStatLabel}>Estimated home use</Text>
+							<Text style={[styles.eoStatValue, { color: "#10B981" }]}>
+								{displayHomeConsumption.toFixed(0)} <Text style={styles.eoStatUnit}>kWh</Text>
+							</Text>
+							<Text style={styles.eoStatNote}>
+								{flowScope === "all"
+									? `${allTimeHomeAvgPerMonth} kWh/mo avg`
+									: "Calculated estimate"}
 							</Text>
 						</View>
 					</View>
 
-					{/* ─── 2. SPLIT STEM & STRAIGHT FLOW ARROWS ─── */}
-					<View
-						style={styles.fcConnectorContainer}
-						onLayout={(e) => {
-							const w = Math.round(e.nativeEvent.layout.width);
-							if (w > 0 && Math.abs(w - connectorWidth) > 2) {
-								setConnectorWidth(w);
-							}
-						}}
-					>
-						<Svg width={connectorWidth} height={54} style={StyleSheet.absoluteFill}>
-							{/* Left flow (Purple): Straight stem -> horizontal split -> drop */}
-							<Path d={leftPath} stroke="#8B5CF6" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-							<Path d={leftArrow} stroke="#8B5CF6" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-							{/* Right flow (Green): Straight stem -> horizontal split -> drop */}
-							<Path d={rightPath} stroke="#10B981" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-							<Path d={rightArrow} stroke="#10B981" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-						</Svg>
-
-						{/* Percentage Badges */}
-						<View style={[styles.fcPillBadgeLeft, { left: Math.round(connectorWidth * 0.375 - 18) }]}>
-							<Text style={styles.fcPillTextLeft}>{solarToHomePct}%</Text>
+					{/* Row 2: Import & Export */}
+					<View style={styles.eoRow}>
+						<View style={styles.eoStat}>
+							<View style={styles.eoIconWrap}>
+								<MaterialCommunityIcons name="tray-arrow-down" size={22} color={COLORS.text} />
+							</View>
+							<Text style={styles.eoStatLabel}>Grid import</Text>
+							<Text style={[styles.eoStatValue, { color: COLORS.text }]}>
+								{displayImp.toFixed(0)} <Text style={styles.eoStatUnit}>kWh</Text>
+							</Text>
+							{flowScope === "all" && (
+								<Text style={styles.eoStatNote}>{allTimeImpAvgPerMonth} kWh/mo avg</Text>
+							)}
 						</View>
-						<View style={[styles.fcPillBadgeRight, { left: Math.round(connectorWidth * 0.625 - 18) }]}>
-							<Text style={styles.fcPillTextRight}>{solarToGridPct}%</Text>
-						</View>
-					</View>
-
-					{/* ─── 3. MIDDLE ROW: HOME USED & GOA GRID ─── */}
-					<View style={styles.fcMiddleRow}>
-						{/* Left Card: Home Used (House Shape) */}
-						<View
-							style={styles.fcHomeCard}
-							onLayout={(e) => {
-								const { width, height } = e.nativeEvent.layout;
-								if (width > 0 && height > 0 && (Math.abs(width - homeCardLayout.width) > 2 || Math.abs(height - homeCardLayout.height) > 2)) {
-									setHomeCardLayout({
-										width: Math.round(width),
-										height: Math.round(height),
-									});
-								}
-							}}
-						>
-							<Svg width={hw} height={hh} style={StyleSheet.absoluteFill}>
-								{/* House Wall & Roof Silhouette */}
-								<Path d={housePath} fill="#FAF5FF" stroke="#7C3AED" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-
-								{/* Attic Circular Window on Roof Gable */}
-								<Circle cx={hcx} cy={Math.round(roofEaveY * 0.44)} r={6.5} fill="#EDE9FE" stroke="#7C3AED" strokeWidth={1.5} />
-								<Path
-									d={`M ${hcx - 6.5} ${Math.round(roofEaveY * 0.44)} L ${hcx + 6.5} ${Math.round(roofEaveY * 0.44)} M ${hcx} ${Math.round(roofEaveY * 0.44) - 6.5} L ${hcx} ${Math.round(roofEaveY * 0.44) + 6.5}`}
-									stroke="#7C3AED"
-									strokeWidth={1.2}
-								/>
-							</Svg>
-
-							{/* Centered Content: Title, Reading, Tag */}
-							<View style={styles.fcHomeCenterContent}>
-								<Text style={styles.fcHomeTitleText}>Home</Text>
-
-								{/* Consumption Value Box */}
-								<View style={styles.fcHomeLcdBox}>
-									<Text style={styles.fcHeroValue}>
-										{displayHomeConsumption.toFixed(0)}
-										<Text style={styles.fcHeroUnit}> kWh</Text>
-									</Text>
-								</View>
-
-								{/* Total Consumed Label Tag */}
-								<View style={styles.fcHomeTag}>
-									<Text style={styles.fcHomeTagText}>Total Used</Text>
-								</View>
+						<View style={styles.eoStat}>
+							<View style={styles.eoIconWrap}>
+								<MaterialCommunityIcons name="tray-arrow-up" size={22} color={COLORS.text} />
 							</View>
-						</View>
-
-						{/* Right Card: Goa Grid (Utility Meter Enclosure Shape) */}
-						<View
-							style={styles.fcGridCard}
-							onLayout={(e) => {
-								const { width, height } = e.nativeEvent.layout;
-								if (width > 0 && height > 0 && (Math.abs(width - gridCardLayout.width) > 2 || Math.abs(height - gridCardLayout.height) > 2)) {
-									setGridCardLayout({
-										width: Math.round(width),
-										height: Math.round(height),
-									});
-								}
-							}}
-						>
-							{/* Vector SVG Meter Enclosure */}
-							<Svg width={gw} height={gh} style={StyleSheet.absoluteFill}>
-								{/* Left Hinge Tabs (Upper & Lower) */}
-								<Rect x={1} y={Math.round(2 + (gh - 18) * 0.18)} width={7} height={18} rx={3} ry={3} fill="#F0FDF4" stroke="#0D9488" strokeWidth={2} />
-								<Rect x={1} y={Math.round(2 + (gh - 18) * 0.62)} width={7} height={18} rx={3} ry={3} fill="#F0FDF4" stroke="#0D9488" strokeWidth={2} />
-
-								{/* Right Latch Handle */}
-								<Rect x={Math.max(10, gw - 8)} y={Math.round(2 + (gh - 18) * 0.35)} width={7} height={28} rx={3} ry={3} fill="#F0FDF4" stroke="#0D9488" strokeWidth={2} />
-
-								{/* Bottom Cable Glands / Terminals (Left, Middle, Right) */}
-								{/* Left terminal */}
-								<Rect x={Math.round((gw - 16) * 0.25 + 8 - 7)} y={gh - 16} width={14} height={5} rx={1.5} fill="#F0FDF4" stroke="#0D9488" strokeWidth={1.8} />
-								<Rect x={Math.round((gw - 16) * 0.25 + 8 - 4.5)} y={gh - 12} width={9} height={8} rx={2} fill="#F0FDF4" stroke="#0D9488" strokeWidth={1.8} />
-
-								{/* Middle terminal */}
-								<Rect x={Math.round(gw / 2 - 7)} y={gh - 16} width={14} height={5} rx={1.5} fill="#F0FDF4" stroke="#0D9488" strokeWidth={1.8} />
-								<Rect x={Math.round(gw / 2 - 4.5)} y={gh - 12} width={9} height={8} rx={2} fill="#F0FDF4" stroke="#0D9488" strokeWidth={1.8} />
-
-								{/* Right terminal */}
-								<Rect x={Math.round((gw - 16) * 0.75 + 8 - 7)} y={gh - 16} width={14} height={5} rx={1.5} fill="#F0FDF4" stroke="#0D9488" strokeWidth={1.8} />
-								<Rect x={Math.round((gw - 16) * 0.75 + 8 - 4.5)} y={gh - 12} width={9} height={8} rx={2} fill="#F0FDF4" stroke="#0D9488" strokeWidth={1.8} />
-
-								{/* Main Meter Outer Enclosure Box */}
-								<Rect x={7} y={2} width={Math.max(10, gw - 14)} height={Math.max(10, gh - 18)} rx={14} ry={14} fill="#F0FDF4" stroke="#0D9488" strokeWidth={2.5} />
-
-								{/* Inner Bezel Border */}
-								<Rect x={13} y={7} width={Math.max(6, gw - 26)} height={Math.max(6, gh - 28)} rx={8} ry={8} fill="none" stroke="#A7F3D0" strokeWidth={1.5} />
-							</Svg>
-
-							{/* Header: Meter Icon and Title */}
-							<View style={styles.fcNodeHeader}>
-								<View style={styles.fcGridIconWrap}>
-									<GridIcon size={16} color="#0D9488" />
-								</View>
-								<Text style={styles.fcCardTitleText}>Grid</Text>
-							</View>
-
-							{/* Digital LCD Window with Reading */}
-							<View style={styles.fcGridLcdBox}>
-								<Text style={styles.fcHeroValue}>
-									{displayExp}
-									<Text style={styles.fcHeroUnit}> kWh</Text>
-								</Text>
-							</View>
-
-							{/* 3 Push Buttons below LCD */}
-							<View style={styles.fcMeterButtonsRow}>
-								<View style={styles.fcMeterBtn} />
-								<View style={styles.fcMeterBtn} />
-								<View style={styles.fcMeterBtn} />
-							</View>
-
-							{/* Bottom Breakdown Floor Card */}
-							<View style={styles.fcGridFloorCard}>
-								<View style={styles.fcBreakdownItem}>
-									<Ionicons name="pie-chart" size={11} color="#0D9488" />
-									<Text style={styles.fcBreakdownLabel} numberOfLines={1}>
-										Solar Share
-									</Text>
-									<Text style={styles.fcBreakdownValExport} numberOfLines={1}>
-										{solarToGridPct}%
-									</Text>
-								</View>
-								<View style={styles.fcGridFloorDivider} />
-								<View style={styles.fcBreakdownItem}>
-									<Ionicons name="stats-chart" size={11} color="#10B981" />
-									<Text style={styles.fcBreakdownLabel} numberOfLines={1}>
-										Daily Avg
-									</Text>
-									<Text style={styles.fcBreakdownValExport} numberOfLines={1}>
-										{exportAvgPerDay} kWh
-									</Text>
-								</View>
-							</View>
+							<Text style={styles.eoStatLabel}>Grid export</Text>
+							<Text style={[styles.eoStatValue, { color: COLORS.text }]}>
+								{displayExp.toFixed(0)} <Text style={styles.eoStatUnit}>kWh</Text>
+							</Text>
+							{flowScope === "all" && (
+								<Text style={styles.eoStatNote}>{allTimeExpAvgPerMonth} kWh/mo avg</Text>
+							)}
 						</View>
 					</View>
 
-					{/* ─── 4. BOTTOM CONNECTORS: GRID → HOME & GRID → BATTERY ─── */}
-					<View
-						style={styles.fcImportConnector}
-						onLayout={(e) => {
-							const w = Math.round(e.nativeEvent.layout.width);
-							if (w > 0 && Math.abs(w - connectorWidth) > 2) {
-								setConnectorWidth(w);
-							}
-						}}
-					>
-						<Svg width={connectorWidth} height={100} style={StyleSheet.absoluteFill}>
-							{/* Left: Grid -> Home import path (Blue) */}
-							<Path d={importPath} stroke="#2563EB" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-							<Path d={importArrow} stroke="#2563EB" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-
-							{/* Right: Grid -> Battery remaining balance path (Emerald Green) */}
-							<Path d={batteryPath} stroke="#059669" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-							<Path d={batteryArrow} stroke="#059669" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-						</Svg>
-
-						{/* Imported Value Pill Badge (Centered along the horizontal path, not covering arrows) */}
-						<View style={[styles.fcImportPillWrap, { left: Math.max(leftTargetX + 16, Math.min(gridImportX - 110, Math.round(importPillCenterX - 55))) }]}>
-							<View style={styles.fcImportPill}>
-								<Ionicons name="arrow-back" size={11} color="#2563EB" />
-								<Text style={styles.fcImportPillText}>
-									Imported: <Text style={styles.fcImportPillVal}>{displayImp} kWh</Text>
-								</Text>
-							</View>
+					{/* Remaining Balance */}
+					<View style={styles.eoRemainingRow}>
+						<View style={styles.eoRemainingIconWrap}>
+							<Ionicons name="battery-charging" size={20} color="#059669" />
 						</View>
-
-						{/* Battery Remaining Balance Badge (Bigger) */}
-						<View style={[styles.fcBatteryPillWrap, { right: 0 }]}>
-							<View style={styles.fcBatteryPill}>
-								<View style={styles.fcBatteryIconCircle}>
-									<Ionicons name="battery-charging" size={18} color="#059669" />
-								</View>
-								<View style={styles.fcBatteryTextCol}>
-									<Text style={styles.fcBatteryPillText} numberOfLines={1}>
-										{connectorWidth < 340 ? "Remaining" : "Remaining Balance"}
-									</Text>
-									<View style={styles.fcBatteryValRow}>
-										<Text style={styles.fcBatteryPillVal}>{displayClosingCredit}</Text>
-										<Text style={styles.fcBatteryUnit}>kWh</Text>
-									</View>
-								</View>
-							</View>
+						<View style={styles.eoRemainingTextCol}>
+							<Text style={styles.eoRemainingLabel}>Remaining Balance</Text>
+							<Text style={styles.eoRemainingSubLabel}>Carried forward to next bill</Text>
 						</View>
+						<Text style={styles.eoRemainingValue}>
+							{displayClosingCredit}{" "}
+							<Text style={styles.eoRemainingUnit}>kWh</Text>
+						</Text>
 					</View>
-
-					{/* ─── 5. INTEGRATED ENERGY BANK ─── */}
-					{/* <View style={styles.bankContainer}>
-						<View style={styles.bankHeaderRow}>
-							<View style={styles.bankTitleGroup}>
-								<View style={styles.bankIconWrap}>
-									<Ionicons name="battery-charging" size={16} color={COLORS.bank} />
-								</View>
-								<View>
-									<Text style={styles.bankTitleText}>Energy Bank</Text>
-									<Text style={styles.bankSubtitleText}>
-										{flowScope === "month" ? `Carried forward (${bill.period})` : `Carried forward (as of ${lastPeriod})`}
-									</Text>
-								</View>
-							</View>
-							<View style={styles.bankHeroBadge}>
-								<Text style={styles.bankHeroVal}>
-									{displayClosingCredit} <Text style={styles.bankHeroUnit}>kWh</Text>
-								</Text>
-								<Text style={styles.bankHeroSub}>Balance</Text>
-							</View>
-						</View>
-
-						<View style={styles.formulaRow}>
-							<FormulaStep value={displayOpeningCredit} label="Opening" />
-							<Text style={styles.formulaOp}>＋</Text>
-							<FormulaStep value={displayExp ?? 0} label="Export" color={COLORS.export} />
-							<Text style={styles.formulaOp}>－</Text>
-							<FormulaStep value={displayUsedCredit} label="Used" color={COLORS.import} />
-							<Text style={styles.formulaOp}>＝</Text>
-							<FormulaStep value={displayClosingCredit} label="Balance" color={COLORS.gold} highlight />
-						</View>
-
-						{bill.needsReview && (
-							<InfoNote
-								text="⚠️ Bill value differs from calculated. Bill-stated values are preserved."
-								color={COLORS.danger}
-								style={{ marginTop: SPACING.xs }}
-							/>
-						)}
-					</View> */}
 				</View>
 			</Card>
 
 			{/* ─── 2. Current Bill ─── */}
-			<Card
+			{/* <Card
 				title="Current Bill"
 				subtitle={bill.dueDate ? `Due: ${bill.dueDate}${bill.billNumber ? ` · #${bill.billNumber}` : ""}` : (bill.billNumber ? `Bill #${bill.billNumber}` : bill.period)}
 				badge={<Badge label={`₹${bill.billAmount.toFixed(0)}`} color={COLORS.gold} />}
@@ -574,7 +241,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ bills, profile, careAsse
 					{bill.rebate !== undefined && bill.rebate !== 0 && <LedgerRow label="Rebate" value={`−₹${Math.abs(bill.rebate).toFixed(2)}`} valueColor={COLORS.success} />}
 					{bill.otherCharges !== undefined && bill.otherCharges !== 0 && <LedgerRow label="Other Charges" value={`₹${bill.otherCharges.toFixed(2)}`} />}
 				</View>
-			</Card>
+			</Card> */}
 
 			{/* ─── 4. Panel Care ─── */}
 			<Card title="Panel Care" subtitle={`Last cleaned: ${profile.lastCleanedDate ?? "Not recorded"}`} badge={<Badge label={careAssessment.state} color={careColor} />}>
@@ -733,428 +400,93 @@ const styles = StyleSheet.create({
 		fontWeight: FONT.bold,
 	},
 
-	// Flowchart
-	flowchartWrap: {
-		width: "100%",
-		marginTop: 2,
+	// ── Energy Overview Flat Stats ──────────────────────────────
+	eoContainer: {
+		gap: SPACING.md + 2,
 	},
-
-	// 1. Solar Generated Card (Slanted Parallelogram)
-	fcSolarCard: {
-		width: "100%",
-		alignItems: "center",
-		justifyContent: "center",
-		backgroundColor: "transparent",
-		paddingVertical: 5,
-		paddingHorizontal: 22,
-		minHeight: 56,
-		position: "relative",
-	},
-	fcSolarMainRow: {
+	eoRow: {
 		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: 8,
-		width: "100%",
+		gap: SPACING.md,
+		alignItems: "flex-start",
 	},
-	fcSolarHeaderGroup: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 5,
-	},
-	fcSolarIconBadge: {
-		width: 18,
-		height: 18,
-		borderRadius: 9,
-		backgroundColor: "#FEF3C7",
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	fcSolarHeaderLabel: {
-		fontSize: 10,
-		fontWeight: FONT.bold,
-		color: "#B45309",
-		letterSpacing: 0.5,
-		textTransform: "uppercase",
-	},
-	fcSolarLcdBox: {
-		backgroundColor: "rgba(255, 255, 255, 0.92)",
-		borderWidth: 1.5,
-		borderColor: "#FCD34D",
-		borderRadius: 6,
-		paddingVertical: 2,
-		paddingHorizontal: 8,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	fcSolarHeroNum: {
-		fontSize: 18,
-		fontWeight: FONT.heavy,
-		color: "#0F172A",
-		letterSpacing: -0.3,
-	},
-	fcSolarHeroUnit: {
-		fontSize: 11.5,
-		fontWeight: FONT.semi,
-		color: "#64748B",
-		marginLeft: 3,
-	},
-	fcSolarAvgRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: 4,
-		marginTop: 2,
-		backgroundColor: "#FEF3C7",
-		paddingHorizontal: 8,
-		paddingVertical: 1.5,
-		borderRadius: 6,
-		borderWidth: 1,
-		borderColor: "#FDE68A",
-	},
-	fcSolarAvgText: {
-		fontSize: 9.5,
-		fontWeight: FONT.semi,
-		color: "#B45309",
-		textAlign: "center",
-	},
-
-	// 2. Connector & Flow Arrows
-	fcConnectorContainer: {
-		width: "100%",
-		height: 54,
-		position: "relative",
-		justifyContent: "center",
-	},
-	fcPillBadgeLeft: {
-		position: "absolute",
-		top: 15,
-		backgroundColor: "#F3E8FF",
-		borderWidth: 1,
-		borderColor: "#E9D5FF",
-		paddingHorizontal: 8,
-		paddingVertical: 2,
-		borderRadius: 12,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	fcPillTextLeft: {
-		fontSize: 11,
-		fontWeight: FONT.bold,
-		color: "#7C3AED",
-	},
-	fcPillBadgeRight: {
-		position: "absolute",
-		top: 15,
-		backgroundColor: "#DCFCE7",
-		borderWidth: 1,
-		borderColor: "#BBF7D0",
-		paddingHorizontal: 8,
-		paddingVertical: 2,
-		borderRadius: 12,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	fcPillTextRight: {
-		fontSize: 11,
-		fontWeight: FONT.bold,
-		color: "#059669",
-	},
-
-	// 3. Middle Row
-	fcMiddleRow: {
-		width: "100%",
-		flexDirection: "row",
-		alignItems: "stretch",
-		gap: 10,
-	},
-	fcHomeCard: {
+	eoStat: {
 		flex: 1,
-		minWidth: 0,
-		backgroundColor: "transparent",
-		paddingHorizontal: 22,
-		paddingTop: 60,
-		paddingBottom: 22,
-		minHeight: 168,
+	},
+	eoIconWrap: {
+		height: 24,
 		justifyContent: "center",
-		alignItems: "center",
-		position: "relative",
-	},
-	fcHomeCenterContent: {
-		width: "100%",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: 8,
-	},
-	fcHomeTitleText: {
-		fontSize: 14,
-		fontWeight: FONT.bold,
-		color: "#0F172A",
-		textAlign: "center",
-	},
-	fcHomeLcdBox: {
-		backgroundColor: "#FAF5FF",
-		borderWidth: 1.5,
-		borderColor: "#8B5CF6",
-		borderRadius: 8,
-		paddingVertical: 6,
-		paddingHorizontal: 10,
-		alignItems: "center",
-		justifyContent: "center",
-		width: "100%",
-	},
-	fcHomeTag: {
-		backgroundColor: "#EDE9FE",
-		paddingHorizontal: 10,
-		paddingVertical: 4,
-		borderRadius: 6,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	fcHomeTagText: {
-		fontSize: 9.5,
-		fontWeight: FONT.bold,
-		color: "#7C3AED",
-		letterSpacing: 0.6,
-		textTransform: "uppercase",
-		textAlign: "center",
-	},
-	fcGridCard: {
-		flex: 1,
-		minWidth: 0,
-		backgroundColor: "transparent",
-		paddingHorizontal: 16,
-		paddingTop: 10,
-		paddingBottom: 22,
-		minHeight: 168,
-		justifyContent: "space-between",
-		position: "relative",
-	},
-	fcGridLcdBox: {
-		backgroundColor: "#E0F2FE",
-		borderWidth: 1.5,
-		borderColor: "#0D9488",
-		borderRadius: 8,
-		paddingVertical: 3,
-		paddingHorizontal: 6,
-		alignItems: "center",
-		justifyContent: "center",
-		width: "100%",
-		marginVertical: 2,
-	},
-	fcMeterButtonsRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: 6,
-		marginBottom: 4,
-	},
-	fcMeterBtn: {
-		width: 7,
-		height: 7,
-		borderRadius: 2,
-		backgroundColor: "#CCFBF1",
-		borderWidth: 1,
-		borderColor: "#0D9488",
-	},
-	fcNodeHeader: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 8,
 		marginBottom: 6,
 	},
-	fcHomeIconWrap: {
-		width: 32,
-		height: 32,
-		borderRadius: 16,
-		backgroundColor: "#EDE9FE",
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	fcGridIconWrap: {
-		width: 32,
-		height: 32,
-		borderRadius: 16,
-		backgroundColor: "#DCFCE7",
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	fcCardTitleText: {
-		fontSize: 14,
-		fontWeight: FONT.bold,
-		color: "#0F172A",
-		flexShrink: 1,
-	},
-	fcHeroValueRow: {
-		flexDirection: "row",
-		alignItems: "baseline",
-		justifyContent: "center",
-		width: "100%",
-		marginBottom: 10,
-	},
-	fcHeroValue: {
-		fontSize: 24,
-		fontWeight: FONT.heavy,
-		color: "#0F172A",
-		letterSpacing: -0.4,
-	},
-	fcHeroUnit: {
+	eoStatLabel: {
 		fontSize: 13,
-		fontWeight: FONT.semi,
-		color: "#64748B",
-		marginLeft: 4,
-	},
-	fcBreakdownList: {
-		gap: 6,
-	},
-	fcBreakdownItem: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-	},
-	fcBreakdownLabel: {
-		fontSize: 11,
-		color: "#475569",
+		color: COLORS.textMuted,
 		fontWeight: FONT.medium,
-		flex: 1,
-		marginLeft: 5,
+		marginBottom: 2,
 	},
-	fcBreakdownValSolar: {
-		fontSize: 12,
-		fontWeight: FONT.bold,
-		color: "#7C3AED",
+	eoStatValue: {
+		fontSize: 26,
+		fontWeight: FONT.heavy,
+		letterSpacing: -0.5,
+		lineHeight: 32,
 	},
-	fcBreakdownValGrid: {
-		fontSize: 12,
-		fontWeight: FONT.bold,
-		color: "#2563EB",
-	},
-	fcBreakdownValExport: {
-		fontSize: 12,
-		fontWeight: FONT.bold,
-		color: "#059669",
-	},
-
-	fcGridBadge: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 3,
-		backgroundColor: "#DCFCE7",
-		paddingHorizontal: 7,
-		paddingVertical: 2,
-		borderRadius: 10,
-		marginLeft: "auto",
-	},
-	fcGridBadgeText: {
-		fontSize: 10,
-		fontWeight: FONT.bold,
-		color: "#059669",
-	},
-	fcGridFloorCard: {
-		width: "100%",
-		backgroundColor: "#FFFFFF",
-		borderRadius: 10,
-		borderWidth: 1,
-		borderColor: "#BBF7D0",
-		paddingVertical: 6,
-		paddingHorizontal: 8,
-		gap: 4,
-	},
-	fcGridFloorDivider: {
-		height: 1,
-		backgroundColor: "#F0FDF4",
-	},
-
-	// Bottom Grid -> Home Import & Grid -> Battery Connectors
-	fcImportConnector: {
-		width: "100%",
-		height: 100,
-		position: "relative",
-		marginTop: 0,
-		marginBottom: 4,
-	},
-	fcImportPillWrap: {
-		position: "absolute",
-		top: 9,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	fcImportPill: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 4,
-		backgroundColor: "#EFF6FF",
-		borderWidth: 1,
-		borderColor: "#BFDBFE",
-		borderRadius: 12,
-		paddingHorizontal: 10,
-		paddingVertical: 3.5,
-	},
-	fcImportPillText: {
-		fontSize: 11,
-		color: "#1E40AF",
+	eoStatUnit: {
+		fontSize: 15,
 		fontWeight: FONT.medium,
+		color: COLORS.textMuted,
 	},
-	fcImportPillVal: {
-		fontSize: 11,
-		fontWeight: FONT.bold,
-		color: "#2563EB",
+	eoStatNote: {
+		fontSize: 12,
+		color: COLORS.textMuted,
+		marginTop: 4,
 	},
-	fcBatteryPillWrap: {
-		position: "absolute",
-		top: 40,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	fcBatteryPill: {
+	eoRemainingRow: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: 8,
+		gap: 12,
 		backgroundColor: "#F0FDF4",
-		borderWidth: 1.5,
+		borderRadius: RADIUS.md,
+		borderWidth: 1,
 		borderColor: "#86EFAC",
-		borderRadius: 16,
-		paddingVertical: 6,
-		paddingHorizontal: 10,
+		paddingVertical: 12,
+		paddingHorizontal: SPACING.md,
 		...SHADOW.card,
 	},
-	fcBatteryIconCircle: {
-		width: 32,
-		height: 32,
-		borderRadius: 16,
+	eoRemainingIconWrap: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
 		backgroundColor: "#DCFCE7",
 		alignItems: "center",
 		justifyContent: "center",
 	},
-	fcBatteryTextCol: {
-		justifyContent: "center",
+	eoRemainingTextCol: {
+		flex: 1,
 	},
-	fcBatteryPillText: {
-		fontSize: 10,
+	eoRemainingLabel: {
+		fontSize: 13,
 		fontWeight: FONT.bold,
-		color: "#047857",
-		letterSpacing: 0.5,
-		textTransform: "uppercase",
+		color: "#065F46",
 	},
-	fcBatteryValRow: {
-		flexDirection: "row",
-		alignItems: "baseline",
-		gap: 3,
+	eoRemainingSubLabel: {
+		fontSize: 11,
+		color: "#059669",
 		marginTop: 1,
 	},
-	fcBatteryPillVal: {
+	eoRemainingValue: {
 		fontSize: 22,
 		fontWeight: FONT.heavy,
 		color: "#065F46",
-		letterSpacing: -0.3,
+		letterSpacing: -0.5,
 	},
-	fcBatteryUnit: {
+	eoRemainingUnit: {
 		fontSize: 13,
-		fontWeight: FONT.semi,
+		fontWeight: FONT.medium,
 		color: "#059669",
 	},
 
-	// Flow grid
+	// (legacy fc* styles removed — flowchart replaced by eo* tiles)
+
+	// Flow grid (used by older FlowTile sub-component)
 	flowGrid: {
 		flexDirection: "row",
 		flexWrap: "wrap",
@@ -1175,6 +507,8 @@ const styles = StyleSheet.create({
 	flowTileValue: { fontSize: 26, fontWeight: FONT.heavy, color: COLORS.text, marginTop: 2 },
 	flowTileUnit: { fontSize: 12, color: COLORS.textMuted },
 	flowTileNote: { fontSize: 11, color: COLORS.textMuted, marginTop: 4 },
+
+	// placeholder to maintain style block structure
 	savingsRow: {
 		flexDirection: "row",
 		alignItems: "center",

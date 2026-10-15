@@ -20,9 +20,7 @@ interface BillsScreenProps {
 export const BillsScreen: React.FC<BillsScreenProps> = ({
   bills, onAddBill, onDeleteBill,
 }) => {
-  const [expandedId, setExpandedId] = useState<string | null>(
-    bills.length > 0 ? bills[0].id : null
-  );
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const toggle = (id: string) =>
     setExpandedId((prev) => (prev === id ? null : id));
@@ -91,7 +89,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
           <Card
             key={bill.id}
             title={bill.period}
-            subtitle={`Bill #${bill.billNumber ?? 'N/A'} · Due: ${bill.dueDate ?? 'N/A'} · ${bill.source}`}
+            subtitle={`Bill #${bill.billNumber ?? 'N/A'}${bill.periodStart && bill.periodEnd ? ` · ${bill.periodStart} to ${bill.periodEnd}` : ''} · Due: ${bill.dueDate ?? 'N/A'}`}
             badge={
               <View style={styles.amountBadge}>
                 <Text style={styles.amountBadgeText}>₹{bill.billAmount.toFixed(0)}</Text>
@@ -129,6 +127,13 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
             {/* ── Expanded detail ── */}
             {expanded && (
               <View style={styles.expandedBox}>
+                <Text style={styles.expandedSection}>METER READING INTERVAL</Text>
+                {bill.periodStart && bill.periodEnd ? (
+                  <LedgerRow label="Meter Read Period" value={`${bill.periodStart} to ${bill.periodEnd}`} />
+                ) : null}
+                <LedgerRow label="Billing Days" value={`${bill.billingDays || 31} days`} />
+
+                <Divider style={{ marginVertical: SPACING.sm }} />
                 <Text style={styles.expandedSection}>ENERGY LEDGER</Text>
                 <LedgerRow label="Opening Bank Balance" value={`${bill.openingCreditKwh} kWh`} />
                 <LedgerRow label="+ Current Export" value={`${bill.exportKwh} kWh`} valueColor={COLORS.export} />

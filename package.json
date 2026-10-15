@@ -20,6 +20,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -29,7 +31,8 @@
     "web": "expo start --web",
     "test": "node --experimental-strip-types scripts/test_pdf_parser.mjs",
     "build:apk": "eas build -p android --profile preview",
-    "build:aab": "eas build -p android --profile production"
+    "build:aab": "eas build -p android --profile production",
+    "lint": "expo lint"
   },
   "private": true
 }

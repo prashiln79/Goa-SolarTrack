@@ -54,6 +54,66 @@ const MONTH_NAMES = [
 ];
 
 /**
+ * Determines the billing period month and year based on meter reading dates.
+ * In EDG (Goa Electricity Department) bills:
+ * A meter reading taken on e.g. 01.09.2026 records consumption from 01.08.2026 to 01.09.2026.
+ * The 31 days of generation/import/export occurred during AUGUST.
+ * The bill itself is issued weeks later in October.
+ * When readings conclude in the first week of a month (day <= 7), the billed period is the START month.
+ */
+export function deriveBillingPeriod(
+  startDay: number,
+  startMonth: number, // 1-12
+  startYear: number,
+  endDay: number,
+  endMonth: number,   // 1-12
+  endYear: number
+): { periodMonth: number; periodYear: number; periodLabel: string } {
+  // If both dates fall in the same month
+  if (startMonth === endMonth && startYear === endYear) {
+    const mIdx = startMonth - 1;
+    return {
+      periodMonth: mIdx,
+      periodYear: startYear,
+      periodLabel: `${MONTH_NAMES[mIdx]} ${startYear}`,
+    };
+  }
+
+  // If reading ends on the 1st through 7th of a month (e.g., 01.09.2026 after 01.08.2026),
+  // the meter reader was recording closing units for the prior month.
+  // The billed period is the START month (August).
+  if (endDay <= 7) {
+    const mIdx = startMonth - 1;
+    return {
+      periodMonth: mIdx,
+      periodYear: startYear,
+      periodLabel: `${MONTH_NAMES[mIdx]} ${startYear}`,
+    };
+  }
+
+  // Otherwise calculate which month has the majority of days
+  const daysInStartMonth = new Date(startYear, startMonth, 0).getDate();
+  const daysInStart = Math.max(1, daysInStartMonth - startDay + 1);
+  const daysInEnd = Math.max(1, endDay);
+
+  if (daysInStart >= daysInEnd) {
+    const mIdx = startMonth - 1;
+    return {
+      periodMonth: mIdx,
+      periodYear: startYear,
+      periodLabel: `${MONTH_NAMES[mIdx]} ${startYear}`,
+    };
+  } else {
+    const mIdx = endMonth - 1;
+    return {
+      periodMonth: mIdx,
+      periodYear: endYear,
+      periodLabel: `${MONTH_NAMES[mIdx]} ${endYear}`,
+    };
+  }
+}
+
+/**
  * Safely parses a float string, guarding against NaN, Infinity, and null/undefined.
  */
 export function safeParseFloat(val: unknown): number | undefined {
@@ -364,18 +424,21 @@ export function parseGoaBillText(text: string): ParsedBillData {
         if (startFormatted) result.periodStart = startFormatted;
         if (endFormatted) {
           result.periodEnd = endFormatted;
-          // ── CRITICAL FIX: Derive period label from reading end date, NOT bill date.
-          // EDG bills are issued 4-6 weeks after the meter reading date.
-          // e.g. Bill dated Oct 2026 covers the Sep 2026 reading period.
-          // The correct period month is the month of the END reading date.
+          // ── Derive accurate billing period from reading dates (start & end)
+          // e.g. 01.08.2026 to 01.09.2026 = August 2026 billing period (31 days).
           try {
+            const startDd = parseInt(pStartParts[0], 10);
+            const startMm = parseInt(pStartParts[1], 10);
+            const startYyyy = parseInt(pStartParts[2], 10);
+            const endDd = parseInt(pEndParts[0], 10);
             const endMm = parseInt(pEndParts[1], 10);
             const endYyyy = parseInt(pEndParts[2], 10);
-            if (!isNaN(endMm) && endMm >= 1 && endMm <= 12 && !isNaN(endYyyy)) {
-              const mIdx = endMm - 1; // 0-indexed
-              result.periodMonth = mIdx;
-              result.periodYear = endYyyy;
-              result.periodLabel = `${MONTH_NAMES[mIdx]} ${endYyyy}`;
+
+            if (!isNaN(startMm) && !isNaN(endMm) && !isNaN(startYyyy) && !isNaN(endYyyy)) {
+              const derived = deriveBillingPeriod(startDd, startMm, startYyyy, endDd, endMm, endYyyy);
+              result.periodMonth = derived.periodMonth;
+              result.periodYear = derived.periodYear;
+              result.periodLabel = derived.periodLabel;
             }
           } catch (_) {}
         }
@@ -411,6 +474,22 @@ export function parseGoaBillText(text: string): ParsedBillData {
         if (pStartParts.length === 3 && pEndParts.length === 3) {
           result.periodStart = safeFormatDate(pStartParts[0], pStartParts[1], pStartParts[2]);
           result.periodEnd = safeFormatDate(pEndParts[0], pEndParts[1], pEndParts[2]);
+
+          try {
+            const startDd = parseInt(pStartParts[0], 10);
+            const startMm = parseInt(pStartParts[1], 10);
+            const startYyyy = parseInt(pStartParts[2], 10);
+            const endDd = parseInt(pEndParts[0], 10);
+            const endMm = parseInt(pEndParts[1], 10);
+            const endYyyy = parseInt(pEndParts[2], 10);
+
+            if (!isNaN(startMm) && !isNaN(endMm) && !isNaN(startYyyy) && !isNaN(endYyyy)) {
+              const derived = deriveBillingPeriod(startDd, startMm, startYyyy, endDd, endMm, endYyyy);
+              result.periodMonth = derived.periodMonth;
+              result.periodYear = derived.periodYear;
+              result.periodLabel = derived.periodLabel;
+            }
+          } catch (_) {}
         }
       }
     } else {
