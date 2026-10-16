@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Platform, Modal, KeyboardAvoidingView,
+  Alert, Modal, KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SystemProfile, SyncStatus } from '../types/solar';
@@ -29,16 +29,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [isTestingConn, setIsTestingConn]     = useState(false);
   const [isSyncing, setIsSyncing]             = useState(false);
 
-  // Edit fields
-  const [capacityKw, setCapacityKw]       = useState(String(profile.capacityKw));
-  const [location, setLocation]           = useState(profile.location);
-  const [tariff, setTariff]               = useState(profile.tariffCategory);
-  const [installDate, setInstallDate]     = useState(profile.installationDate);
-  const [panelCount, setPanelCount]       = useState(String(profile.panelCount ?? ''));
-  const [inverterModel, setInverterModel] = useState(profile.inverterModel ?? '');
-  const [settlementRate, setSettlementRate] = useState(String(profile.settlementRateInr ?? '3.50'));
-  const [systemCost, setSystemCost]       = useState(String(profile.systemCostInr ?? ''));
+  // Edit fields state
+  const [capacityKw, setCapacityKw]       = useState(profile.capacityKw ? String(profile.capacityKw) : '5.0');
+  const [location, setLocation]           = useState(profile.location || '');
+  const [tariff, setTariff]               = useState(profile.tariffCategory || 'LTDS-II-SOLAR');
+  const [installDate, setInstallDate]     = useState(profile.installationDate || '');
+  const [panelCount, setPanelCount]       = useState(profile.panelCount ? String(profile.panelCount) : '');
+  const [inverterModel, setInverterModel] = useState(profile.inverterModel || '');
+  const [settlementRate, setSettlementRate] = useState(profile.settlementRateInr ? String(profile.settlementRateInr) : '3.50');
+  const [systemCost, setSystemCost]       = useState(profile.systemCostInr ? String(profile.systemCostInr) : '');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  const populateFieldsFromProfile = () => {
+    setCapacityKw(profile.capacityKw ? String(profile.capacityKw) : '5.0');
+    setLocation(profile.location || '');
+    setTariff(profile.tariffCategory || 'LTDS-II-SOLAR');
+    setInstallDate(profile.installationDate || '');
+    setPanelCount(profile.panelCount ? String(profile.panelCount) : '');
+    setInverterModel(profile.inverterModel || '');
+    setSettlementRate(profile.settlementRateInr ? String(profile.settlementRateInr) : '3.50');
+    setSystemCost(profile.systemCostInr ? String(profile.systemCostInr) : '');
+  };
+
+  const handleOpenEditProfile = () => {
+    populateFieldsFromProfile();
+    setShowEditProfile(true);
+  };
+
 
   const handleTestConnection = async () => {
     setIsTestingConn(true);
@@ -92,32 +109,46 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const handleSaveProfile = async () => {
     const rawCap = parseFloat(capacityKw);
-    if (!rawCap || rawCap <= 0) {
-      Alert.alert('Invalid', 'Please enter a valid system capacity in kW (e.g. 5.0).');
+    if (isNaN(rawCap) || rawCap <= 0) {
+      Alert.alert('Invalid Capacity', 'Please enter a valid system capacity in kW (e.g. 5.0 or 3.3).');
       return;
     }
-    const cap = rawCap > 100 ? (rawCap >= 1000 ? rawCap / 1000 : 5.0) : rawCap;
+    // Only convert if user entered in Watts (e.g. 3300 or 5000)
+    const cap = rawCap >= 1000 ? rawCap / 1000 : rawCap;
+
+    const parsedCost: number | undefined = (() => {
+      const clean = systemCost.trim().toLowerCase().replace(/,/g, '');
+      if (!clean) return undefined;
+      const lakhMatch = clean.match(/^([\d.]+)\s*(?:lakh|lakhs|lac|lacs|l)$/);
+      if (lakhMatch) {
+        const val = parseFloat(lakhMatch[1]);
+        return isNaN(val) ? undefined : Math.round(val * 100000);
+      }
+      const kMatch = clean.match(/^([\d.]+)\s*k$/);
+      if (kMatch) {
+        const val = parseFloat(kMatch[1]);
+        return isNaN(val) ? undefined : Math.round(val * 1000);
+      }
+      const num = parseFloat(clean);
+      if (isNaN(num) || num <= 0) return undefined;
+      // If user typed decimal <= 50 (e.g. 3.5 for 3.5 Lakhs), convert to Lakhs
+      if (num <= 50 && clean.includes('.')) {
+        return Math.round(num * 100000);
+      }
+      return Math.round(num);
+    })();
+
     const updated: SystemProfile = {
       ...profile,
       capacityKw: cap,
-      location: location.trim() || 'Goa, India',
-      tariffCategory: tariff.trim() || 'LTDS-II-SOLAR',
+      location: location.trim() || profile.location || 'Goa, India',
+      tariffCategory: tariff.trim() || profile.tariffCategory || 'LTDS-II-SOLAR',
       installationDate: installDate.trim() || profile.installationDate,
-      panelCount: parseInt(panelCount) || undefined,
+      panelCount: parseInt(panelCount, 10) || undefined,
       inverterModel: inverterModel.trim() || undefined,
       settlementRateInr: parseFloat(settlementRate) || 3.5,
-      systemCostInr: (() => {
-        const clean = systemCost.trim().toLowerCase().replace(/,/g, '');
-        if (!clean) return undefined;
-        const lakhMatch = clean.match(/^([\d.]+)\s*(?:lakh|lakhs|lac|lacs|l)$/);
-        if (lakhMatch) {
-          const val = parseFloat(lakhMatch[1]);
-          return isNaN(val) ? undefined : Math.round(val * 100000);
-        }
-        const num = parseFloat(clean);
-        if (isNaN(num) || num <= 0) return undefined;
-        return num <= 100 ? Math.round(num * 100000) : Math.round(num);
-      })(),
+      systemCostInr: parsedCost,
+      updatedAt: Date.now(),
     };
     try {
       setIsSavingProfile(true);
@@ -171,7 +202,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <TouchableOpacity
             id="btn-edit-profile"
             style={styles.editBtn}
-            onPress={() => setShowEditProfile(true)}
+            onPress={handleOpenEditProfile}
           >
             <Ionicons name="pencil" size={12} color={COLORS.gold} />
             <Text style={styles.editBtnText}>Edit</Text>
@@ -324,7 +355,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       {/* ── Edit Profile Modal ── */}
       <Modal visible={showEditProfile} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.overlay}>
+        <KeyboardAvoidingView style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Edit System Profile</Text>
@@ -438,7 +469,7 @@ const styles = StyleSheet.create({
   sheetFooter: {
     flexDirection: 'row', gap: SPACING.sm, padding: SPACING.lg,
     borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingBottom: Platform.OS === 'ios' ? SPACING.xl : SPACING.lg,
+    paddingBottom: SPACING.lg,
   },
   fieldLabel: { fontSize: 11, fontWeight: FONT.semi, color: COLORS.textSub, marginBottom: 4 },
   input: {

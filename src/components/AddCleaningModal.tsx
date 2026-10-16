@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, Modal, TouchableOpacity,
-  Alert, KeyboardAvoidingView, Platform, ScrollView,
+  Alert, KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CleaningEvent } from '../types/solar';
@@ -52,7 +52,7 @@ export const AddCleaningModal: React.FC<AddCleaningModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.overlay}>
+      <KeyboardAvoidingView style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}>
             <View>
@@ -175,9 +175,11 @@ const styles = StyleSheet.create({
     color: COLORS.text, fontSize: 13,
   },
   footer: {
-    flexDirection: 'row', gap: SPACING.sm, padding: SPACING.lg,
+    flexDirection: 'row', gap: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: 10,
     borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingBottom: Platform.OS === 'ios' ? SPACING.xl : SPACING.lg,
+    backgroundColor: COLORS.surface,
   },
   cancelBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border },
   cancelBtnText: { fontSize: 14, fontWeight: FONT.semi, color: COLORS.textSub },

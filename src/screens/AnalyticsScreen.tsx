@@ -12,7 +12,6 @@ import {
   Modal,
   TextInput,
   Alert,
-  Platform,
   KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -92,6 +91,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
       const updatedProfile: SystemProfile = {
         ...profile,
         systemCostInr: parsed,
+        updatedAt: Date.now(),
       };
 
       // 1. Persist directly to Firebase Firestore & AsyncStorage
@@ -239,7 +239,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
               id="btn-edit-system-cost"
               style={styles.editPill}
               onPress={() => {
-                setCostInput(String(payback.systemCostInr));
+                setCostInput(payback.isBenchmarkCost ? '' : String(payback.systemCostInr));
                 setShowEditCost(true);
               }}
               activeOpacity={0.7}
@@ -534,10 +534,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
 
       {/* ── Edit Investment Modal ── */}
       <Modal visible={showEditCost} animationType="slide" transparent>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.overlay}
-        >
+        <KeyboardAvoidingView style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Edit Solar Investment</Text>
@@ -955,7 +952,7 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    paddingBottom: Platform.OS === 'ios' ? SPACING.xl : SPACING.lg,
+    paddingBottom: SPACING.lg,
   },
   cancelBtn: {
     flex: 1,

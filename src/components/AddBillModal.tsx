@@ -309,8 +309,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       setIsParsingPdf(true);
 
       const result = await DocumentPicker.getDocumentAsync({
-        type: Platform.OS === 'android' ? '*/*' : 'application/pdf',
-        copyToCacheDirectory: Platform.OS === 'android' ? false : true,
+        type: '*/*',
+        copyToCacheDirectory: false,
       });
 
       if (result.canceled || !result.assets || result.assets.length === 0) {
@@ -616,10 +616,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.overlay}
-      >
+      <KeyboardAvoidingView style={styles.overlay}>
         <View style={styles.sheet}>
           {/* ── Modal Header ── */}
           <View style={styles.sheetHeader}>
@@ -634,7 +631,12 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.form}
+            contentContainerStyle={styles.formContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
 
             {/* ── 1. PDF UPLOAD CARD ── */}
             {!attachedPdf ? (
@@ -819,7 +821,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     entryMode === 'bill' && styles.entryModeTabTextActive,
                   ]}
                 >
-                  Official Bill View (EDG)
+                  Bill View
                 </Text>
                 <View style={styles.easyBadge}>
                   <Text style={styles.easyBadgeText}>Match Bill</Text>
@@ -1031,7 +1033,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     <View style={styles.edgTableHeader}>
                       <Text style={[styles.edgTh, { width: 56 }]}>Unit</Text>
                       <Text style={[styles.edgTh, { flex: 1 }]}>What this means on your bill</Text>
-                      <Text style={[styles.edgTh, { width: 100, textAlign: 'right' }]}>Consumption *</Text>
+                      <Text style={[styles.edgTh, { width: 120, textAlign: 'center' }]}>Consumption *</Text>
                     </View>
 
                     {/* Row 1: KWH_I (Grid Import) */}
@@ -1051,7 +1053,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                           style={[styles.edgTableInput, !importKwh && styles.edgInputPending]}
                           value={importKwh}
                           onChangeText={setImportKwh}
-                          placeholder="e.g. 241"
+                          placeholder="241"
                           placeholderTextColor={COLORS.textMuted}
                           keyboardType="numeric"
                         />
@@ -1076,7 +1078,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                           style={[styles.edgTableInput, !exportKwh && styles.edgInputPending]}
                           value={exportKwh}
                           onChangeText={setExportKwh}
-                          placeholder="e.g. 331"
+                          placeholder="331"
                           placeholderTextColor={COLORS.textMuted}
                           keyboardType="numeric"
                         />
@@ -1101,7 +1103,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                           style={styles.edgTableInput}
                           value={generationKwh}
                           onChangeText={setGenerationKwh}
-                          placeholder="e.g. 431"
+                          placeholder="431"
                           placeholderTextColor={COLORS.textMuted}
                           keyboardType="numeric"
                         />
@@ -1604,7 +1606,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    maxHeight: '92%',
+    height: '95%',
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOW.card,
@@ -1621,7 +1623,13 @@ const styles = StyleSheet.create({
   sheetTitle: { fontSize: 18, fontWeight: FONT.bold, color: COLORS.text },
   sheetSub: { fontSize: 12, color: COLORS.textSub, marginTop: 2 },
   closeBtn: { padding: SPACING.xs },
-  form: { padding: SPACING.lg },
+  form: {
+    flex: 1,
+  },
+  formContent: {
+    padding: SPACING.lg,
+    paddingBottom: SPACING.xl,
+  },
 
   // PDF Upload Card
   uploadCard: {
@@ -2113,11 +2121,12 @@ const styles = StyleSheet.create({
   // Footer
   footer: {
     flexDirection: 'column',
-    padding: SPACING.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    paddingBottom: Platform.OS === 'ios' ? SPACING.xl : SPACING.lg,
-    gap: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    gap: SPACING.xs,
   },
   footerBtns: {
     flexDirection: 'row',
@@ -2496,24 +2505,25 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
   edgInputCell: {
-    width: 100,
+    width: 120,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 3,
+    gap: 4,
   },
   edgTableInput: {
-    width: 68,
-    height: 36,
+    width: 86,
+    height: 42,
     borderWidth: 1.5,
     borderColor: COLORS.border,
     borderRadius: RADIUS.sm,
     backgroundColor: COLORS.surface,
-    paddingHorizontal: 6,
-    fontSize: 14,
+    paddingHorizontal: 4,
+    paddingVertical: 0,
+    fontSize: 15,
     fontWeight: FONT.bold,
     color: COLORS.text,
-    textAlign: 'right',
+    textAlign: 'center',
   },
   edgInputPending: {
     borderColor: `${COLORS.gold}AA`,
@@ -2523,7 +2533,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: FONT.semi,
     color: COLORS.textMuted,
-    width: 25,
+    width: 26,
   },
 
   // ── Bill Summary Mini Row (Matches official bill table) ──

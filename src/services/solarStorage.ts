@@ -117,6 +117,8 @@ export function createDefaultProfile(
     inverterModel: initialData?.inverterModel,
     lastCleanedDate: initialData?.lastCleanedDate,
     settlementRateInr: initialData?.settlementRateInr ?? 3.50,
+    systemCostInr: initialData?.systemCostInr,
+    updatedAt: initialData?.updatedAt ?? Date.now(),
   };
 }
 
@@ -377,8 +379,8 @@ export async function saveCleaningEvent(event: CleaningEvent, consumerNumber?: s
   const updated = [eventWithConsumer, ...current];
   await AsyncStorage.setItem(keys.CLEANINGS, JSON.stringify(updated));
 
-  // Also update lastCleanedDate on profile
-  const profile = await getSystemProfile(cNum);
+  // Also update lastCleanedDate on profile without erasing other profile fields
+  const profile = (await getLocalSystemProfile(cNum)) || (await getSystemProfile(cNum));
   if (profile && (!profile.lastCleanedDate || event.date > profile.lastCleanedDate)) {
     await saveSystemProfile({ ...profile, lastCleanedDate: event.date }, cNum);
   }
@@ -396,13 +398,42 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
   const cNum = consumerNumber ?? _activeConsumerNumber ?? 'primary';
   const keys = getKeys(cNum);
 
+  // Load existing local cache first
+  const localProfile = await getLocalSystemProfile(cNum);
+
   // 1. Try Firestore: solar/{cNum}
   try {
     const d = await withTimeout(getDoc(doc(db, 'solar', cNum)), 3500);
     if (d.exists()) {
-      const p = d.data() as SystemProfile;
-      await AsyncStorage.setItem(keys.PROFILE, JSON.stringify(p));
-      return p;
+      const remote = d.data() as SystemProfile;
+
+      const localTime = localProfile?.updatedAt ?? 0;
+      const remoteTime = remote.updatedAt ?? 0;
+
+      let resolved: SystemProfile;
+      if (localTime > remoteTime && localProfile) {
+        // Local is newer: preserve local customizations and push update to Firestore
+        resolved = {
+          ...remote,
+          ...localProfile,
+          id: cNum,
+          consumerNumber: cNum,
+        };
+        setDoc(doc(db, 'solar', cNum), cleanForFirestore(resolved)).catch(() => {});
+      } else {
+        // Remote is equal or newer: merge so local fields are not erased if remote missed them
+        resolved = {
+          ...(localProfile || {}),
+          ...remote,
+          id: cNum,
+          consumerNumber: cNum,
+          systemCostInr: remote.systemCostInr ?? localProfile?.systemCostInr,
+          capacityKw: remote.capacityKw || localProfile?.capacityKw || 5.0,
+        };
+      }
+
+      await AsyncStorage.setItem(keys.PROFILE, JSON.stringify(resolved));
+      return resolved;
     }
   } catch (_) {}
 
@@ -411,23 +442,37 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
     const legacyDoc = await withTimeout(getDoc(doc(db, 'solar', `${cNum}_profile`)), 2500);
     if (legacyDoc.exists()) {
       const p = legacyDoc.data() as SystemProfile;
-      await setDoc(doc(db, 'solar', cNum), cleanForFirestore(p));
-      await AsyncStorage.setItem(keys.PROFILE, JSON.stringify(p));
-      return p;
+      const merged: SystemProfile = {
+        ...(localProfile || {}),
+        ...p,
+        id: cNum,
+        consumerNumber: cNum,
+        systemCostInr: p.systemCostInr ?? localProfile?.systemCostInr,
+        capacityKw: p.capacityKw || localProfile?.capacityKw || 5.0,
+        updatedAt: p.updatedAt ?? Date.now(),
+      };
+      await setDoc(doc(db, 'solar', cNum), cleanForFirestore(merged));
+      await AsyncStorage.setItem(keys.PROFILE, JSON.stringify(merged));
+      return merged;
     }
   } catch (_) {}
 
-  // 2. Try AsyncStorage
-  return getLocalSystemProfile(cNum);
+  // 2. Fallback: Local Cache
+  return localProfile;
 }
 
 export async function saveSystemProfile(profile: SystemProfile, consumerNumber?: string): Promise<void> {
   const cNum = consumerNumber ?? profile.consumerNumber ?? _activeConsumerNumber ?? 'primary';
 
+  // Merge with existing local profile to guarantee no fields are dropped
+  const existingLocal = await getLocalSystemProfile(cNum);
+
   const profileWithConsumer: SystemProfile = {
+    ...(existingLocal || {}),
     ...profile,
     id: cNum,
     consumerNumber: cNum,
+    updatedAt: Date.now(),
   };
 
   const keys = getKeys(cNum);

@@ -23,6 +23,7 @@ export interface SystemProfile {
   settlementRateInr?: number; // APPC benchmark ₹/kWh
   settlementPolicyId?: string;
   systemCostInr?: number;     // Total system installation / capital cost (₹)
+  updatedAt?: number;         // Timestamp (epoch ms) of last profile change
 }
 
 // ------------------------------------

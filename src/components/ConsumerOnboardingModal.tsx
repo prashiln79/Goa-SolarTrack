@@ -15,7 +15,6 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -76,10 +75,7 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
         if (canCancel && onClose) onClose();
       }}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.overlay}
-      >
+      <KeyboardAvoidingView style={styles.overlay}>
         <View style={styles.card}>
           <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
             {/* Header */}

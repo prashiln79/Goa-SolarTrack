@@ -1,4 +1,4 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+This is an Expo/React Native mobile application built strictly and exclusively for **Android**. Prioritize Android mobile patterns, Android safe insets, performance, and responsive layout. Do not add iOS checks (`Platform.OS === 'ios'`) or iOS fallbacks.
 
 ## Expo has changed — do not trust your training data
 
