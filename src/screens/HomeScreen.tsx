@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { SolarBill, SystemProfile, CareAssessment } from "../types/solar";
 import { Card, Badge, ProgressBar, LedgerRow } from "../components/ui/UIKit";
 import { projectSettlement } from "../domain/tariffEngine";
+import { analyzeIntelligentPerformance } from "../domain/intelligentAnalysis";
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from "../constants/theme";
 
 const formatMonthShort = (period: string) => {
@@ -49,6 +50,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 	const [activeCompareTab, setActiveCompareTab] = useState<"home" | "export">("home");
 	const [showBreakdown, setShowBreakdown] = useState(false);
 	const [selectedGraphBillId, setSelectedGraphBillId] = useState<string | null>(null);
+
+	const smartAnalysis = useMemo(() => {
+		return analyzeIntelligentPerformance(bills, profile, careAssessment);
+	}, [bills, profile, careAssessment]);
 
 	// Chronological bills for generation graph (oldest -> newest)
 	const sortedBills = useMemo(() => {
@@ -403,7 +408,205 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 				</View>
 			</Card>
 
-			{/* ─── 2. Generation Graph ─── */}
+			{/* ─── 2. Smart Performance Insights ─── */}
+			{bills.length > 0 && (
+				<Card
+					title="Smart Insights"
+					subtitle={`Latest status ${smartAnalysis.comparisonPeriod}`}
+					style={styles.cardSpacing}
+					badge={
+						<TouchableOpacity
+							id="btn-view-analysis-header"
+							style={styles.smartViewAllBtn}
+							onPress={onNavigateAnalytics}
+							activeOpacity={0.7}
+						>
+							<Text style={styles.smartViewAllText}>View analysis</Text>
+							<Ionicons name="arrow-forward" size={12} color={COLORS.gold} />
+						</TouchableOpacity>
+					}
+				>
+					<View style={styles.smartContainer}>
+						{/* 2 Status Tiles */}
+						<View style={styles.smartTilesRow}>
+							{/* Tile 1: Electricity Bill */}
+							<View style={styles.smartTile}>
+								<View style={styles.smartTileTop}>
+									<View style={[styles.smartIconBadge, { backgroundColor: "#F1F5F9" }]}>
+										<Ionicons name="receipt-outline" size={14} color={COLORS.text} />
+									</View>
+									<View
+										style={[
+											styles.smartStatusPill,
+											smartAnalysis.billAnalysis.status === "lower"
+												? styles.statusPillGreen
+												: smartAnalysis.billAnalysis.status === "higher"
+												? styles.statusPillRed
+												: styles.statusPillAmber,
+										]}
+									>
+										<Text
+											style={[
+												styles.smartStatusText,
+												smartAnalysis.billAnalysis.status === "lower"
+													? { color: "#059669" }
+													: smartAnalysis.billAnalysis.status === "higher"
+													? { color: "#DC2626" }
+													: { color: "#D97706" },
+											]}
+											numberOfLines={1}
+										>
+											{smartAnalysis.billAnalysis.statusLabel}
+										</Text>
+									</View>
+								</View>
+
+								<Text style={styles.smartTileLabel}>Latest Bill</Text>
+								<View style={styles.smartValRow}>
+									<Text style={styles.smartVal}>
+										₹{Math.round(smartAnalysis.billAnalysis.currentAmount).toLocaleString("en-IN")}
+									</Text>
+									{smartAnalysis.billAnalysis.amountChangePct !== null && (
+										<Text
+											style={[
+												styles.smartChangePct,
+												{
+													color:
+														smartAnalysis.billAnalysis.amountChangePct <= 0
+															? "#059669"
+															: "#DC2626",
+												},
+											]}
+										>
+											{smartAnalysis.billAnalysis.amountChangePct > 0 ? "+" : ""}
+											{smartAnalysis.billAnalysis.amountChangePct}%
+										</Text>
+									)}
+								</View>
+								<Text style={styles.smartTileSub} numberOfLines={2}>
+									{smartAnalysis.billAnalysis.summary}
+								</Text>
+							</View>
+
+							{/* Tile 2: Solar Generation */}
+							<View style={styles.smartTile}>
+								<View style={styles.smartTileTop}>
+									<View style={[styles.smartIconBadge, { backgroundColor: "#FEF3C7" }]}>
+										<Ionicons name="sunny-outline" size={14} color="#D97706" />
+									</View>
+									<View
+										style={[
+											styles.smartStatusPill,
+											smartAnalysis.solarAnalysis.status === "good"
+												? styles.statusPillGreen
+												: smartAnalysis.solarAnalysis.status === "lower"
+												? styles.statusPillRed
+												: styles.statusPillBlue,
+										]}
+									>
+										<Text
+											style={[
+												styles.smartStatusText,
+												smartAnalysis.solarAnalysis.status === "good"
+													? { color: "#059669" }
+													: smartAnalysis.solarAnalysis.status === "lower"
+													? { color: "#DC2626" }
+													: { color: "#0284C7" },
+											]}
+											numberOfLines={1}
+										>
+											{smartAnalysis.solarAnalysis.statusLabel}
+										</Text>
+									</View>
+								</View>
+
+								<Text style={styles.smartTileLabel}>Solar Generation</Text>
+								<View style={styles.smartValRow}>
+									<Text style={[styles.smartVal, { color: "#D97706" }]}>
+										{smartAnalysis.solarAnalysis.currentGenerationKwh !== null
+											? smartAnalysis.solarAnalysis.currentGenerationKwh
+											: "—"}
+									</Text>
+									<Text style={styles.smartUnit}>kWh</Text>
+									{smartAnalysis.solarAnalysis.generationChangePct !== null && (
+										<Text
+											style={[
+												styles.smartChangePct,
+												{
+													color:
+														smartAnalysis.solarAnalysis.generationChangePct >= 0
+															? "#059669"
+															: "#DC2626",
+												},
+											]}
+										>
+											{smartAnalysis.solarAnalysis.generationChangePct > 0 ? "+" : ""}
+											{smartAnalysis.solarAnalysis.generationChangePct}%
+										</Text>
+									)}
+								</View>
+								<Text style={styles.smartTileSub} numberOfLines={2}>
+									{smartAnalysis.solarAnalysis.currentYieldKwhPerKwDay !== null
+										? `${smartAnalysis.solarAnalysis.currentYieldKwhPerKwDay} kWh/kW/day · ${smartAnalysis.solarAnalysis.season === "monsoon" ? "Monsoon" : "Sunny"} target`
+										: smartAnalysis.solarAnalysis.summary}
+								</Text>
+							</View>
+						</View>
+
+						{/* Action Guidance Banner */}
+						<TouchableOpacity
+							id="btn-smart-insight-banner"
+							style={[
+								styles.smartActionBanner,
+								smartAnalysis.actionCheck.severity === "warning"
+									? styles.smartActionWarning
+									: smartAnalysis.actionCheck.severity === "info"
+									? styles.smartActionInfo
+									: styles.smartActionSuccess,
+							]}
+							onPress={onNavigateAnalytics}
+							activeOpacity={0.8}
+						>
+							<Ionicons
+								name={
+									smartAnalysis.actionCheck.severity === "warning"
+										? "alert-circle"
+										: smartAnalysis.actionCheck.severity === "info"
+										? "information-circle"
+										: "checkmark-circle"
+								}
+								size={16}
+								color={
+									smartAnalysis.actionCheck.severity === "warning"
+										? "#DC2626"
+										: smartAnalysis.actionCheck.severity === "info"
+										? "#2563EB"
+										: "#059669"
+								}
+							/>
+							<Text
+								style={[
+									styles.smartActionText,
+									{
+										color:
+											smartAnalysis.actionCheck.severity === "warning"
+												? "#991B1B"
+												: smartAnalysis.actionCheck.severity === "info"
+												? "#1E40AF"
+												: "#065F46",
+									},
+								]}
+								numberOfLines={2}
+							>
+								{smartAnalysis.actionCheck.recommendation}
+							</Text>
+							<Ionicons name="chevron-forward" size={14} color={COLORS.textMuted} />
+						</TouchableOpacity>
+					</View>
+				</Card>
+			)}
+
+			{/* ─── 3. Generation Graph ─── */}
 			{chronologicalBills.length > 0 && (
 				<Card
 					title="Solar Generation"
@@ -1277,5 +1480,135 @@ const styles = StyleSheet.create({
 		fontSize: 15,
 		fontWeight: FONT.bold,
 		color: COLORS.textInverse,
+	},
+
+	// ── Smart Insights Card Styles ──────────────────────────────
+	smartViewAllBtn: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 3,
+		backgroundColor: COLORS.glowGold,
+		borderWidth: 1,
+		borderColor: `${COLORS.gold}44`,
+		paddingHorizontal: 8,
+		paddingVertical: 3,
+		borderRadius: RADIUS.full,
+	},
+	smartViewAllText: {
+		fontSize: 11,
+		fontWeight: FONT.bold,
+		color: COLORS.gold,
+	},
+	smartContainer: {
+		gap: SPACING.sm,
+	},
+	smartTilesRow: {
+		flexDirection: "row",
+		gap: SPACING.sm,
+	},
+	smartTile: {
+		flex: 1,
+		backgroundColor: COLORS.surfaceRaised,
+		borderRadius: RADIUS.md,
+		borderWidth: 1,
+		borderColor: COLORS.border,
+		padding: SPACING.sm + 2,
+	},
+	smartTileTop: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		marginBottom: 6,
+	},
+	smartIconBadge: {
+		width: 24,
+		height: 24,
+		borderRadius: 12,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	smartStatusPill: {
+		paddingHorizontal: 6,
+		paddingVertical: 2,
+		borderRadius: RADIUS.full,
+		borderWidth: 1,
+	},
+	smartStatusText: {
+		fontSize: 9,
+		fontWeight: FONT.bold,
+	},
+	statusPillGreen: {
+		backgroundColor: "#ECFDF5",
+		borderColor: "#A7F3D0",
+	},
+	statusPillRed: {
+		backgroundColor: "#FEF2F2",
+		borderColor: "#FECACA",
+	},
+	statusPillAmber: {
+		backgroundColor: "#FEF3C7",
+		borderColor: "#FDE68A",
+	},
+	statusPillBlue: {
+		backgroundColor: "#E0F2FE",
+		borderColor: "#BAE6FD",
+	},
+	smartTileLabel: {
+		fontSize: 11,
+		color: COLORS.textMuted,
+		fontWeight: FONT.semi,
+	},
+	smartValRow: {
+		flexDirection: "row",
+		alignItems: "baseline",
+		gap: 4,
+		marginVertical: 2,
+	},
+	smartVal: {
+		fontSize: 16,
+		fontWeight: FONT.bold,
+		color: COLORS.text,
+	},
+	smartUnit: {
+		fontSize: 10,
+		color: COLORS.textMuted,
+	},
+	smartChangePct: {
+		fontSize: 11,
+		fontWeight: FONT.bold,
+		marginLeft: "auto",
+	},
+	smartTileSub: {
+		fontSize: 10,
+		color: COLORS.textSub,
+		lineHeight: 14,
+		marginTop: 2,
+	},
+	smartActionBanner: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 8,
+		paddingVertical: 8,
+		paddingHorizontal: 10,
+		borderRadius: RADIUS.md,
+		borderWidth: 1,
+	},
+	smartActionWarning: {
+		backgroundColor: "#FEF2F2",
+		borderColor: "#FECACA",
+	},
+	smartActionInfo: {
+		backgroundColor: "#EFF6FF",
+		borderColor: "#BFDBFE",
+	},
+	smartActionSuccess: {
+		backgroundColor: "#ECFDF5",
+		borderColor: "#A7F3D0",
+	},
+	smartActionText: {
+		fontSize: 11,
+		fontWeight: FONT.medium,
+		flex: 1,
+		lineHeight: 15,
 	},
 });

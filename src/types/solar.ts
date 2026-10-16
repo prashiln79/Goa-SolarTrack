@@ -243,3 +243,15 @@ export interface PaybackAnalysis {
   yearsRemainingFormatted: string; // e.g. "2 yrs 4 mos" or "Fully Recovered"
   estimated25YearNetProfitInr: number;
 }
+
+// ------------------------------------
+// Intelligent Bill & Solar Analysis
+// ------------------------------------
+export type {
+  BillHealthStatus,
+  SolarHealthStatus,
+  IntelligentBillAnalysis,
+  IntelligentSolarAnalysis,
+  IntelligentActionCheck,
+  IntelligentAnalysisResult,
+} from '../domain/intelligentAnalysis';

@@ -324,6 +324,7 @@ function MainApp() {
             bills={bills}
             profile={profile}
             cleaningEventCount={cleanings.length}
+            careAssessment={careAssessment}
             onProfileSave={handleSaveProfile}
           />
         )}

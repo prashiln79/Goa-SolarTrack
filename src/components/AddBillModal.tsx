@@ -1548,7 +1548,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                 disabled={isSubmitting}
                 activeOpacity={0.8}
               >
-                <Ionicons name="checkmark-circle" size={18} color={COLORS.textInverse} />
+                <Ionicons name="checkmark-circle" size={28} color={COLORS.textInverse} />
                 <Text style={styles.saveBtnText}>
                   {isSubmitting ? 'Saving…' : `Save ${derivedDates.label} Bill`}
                 </Text>
@@ -2122,7 +2122,7 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'column',
     paddingHorizontal: SPACING.md,
-    paddingVertical: 10,
+    paddingVertical: 14,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
     backgroundColor: COLORS.surface,
@@ -2151,30 +2151,32 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     flex: 1,
-    paddingVertical: 12,
+    height: 48,
     alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: RADIUS.md,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceRaised,
   },
   cancelBtnText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: FONT.semi,
     color: COLORS.textSub,
   },
   saveBtn: {
     flex: 2,
+    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
     backgroundColor: COLORS.gold,
-    paddingVertical: 12,
     borderRadius: RADIUS.md,
     ...SHADOW.card,
   },
   saveBtnText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: FONT.bold,
     color: COLORS.textInverse,
   },

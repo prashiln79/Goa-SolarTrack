@@ -15,13 +15,14 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SolarBill, SystemProfile } from '../types/solar';
+import { SolarBill, SystemProfile, CareAssessment } from '../types/solar';
 import { Card, Badge, Divider, InfoNote, ProgressBar } from '../components/ui/UIKit';
 import {
   buildMonthlyAnalytics,
   buildAnnualAnalytics,
   calculatePaybackAnalysis,
 } from '../domain/analytics';
+import { analyzeIntelligentPerformance } from '../domain/intelligentAnalysis';
 import { saveSystemProfile } from '../services/solarStorage';
 import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
 
@@ -29,6 +30,7 @@ interface AnalyticsScreenProps {
   bills: SolarBill[];
   profile: SystemProfile;
   cleaningEventCount: number;
+  careAssessment?: CareAssessment;
   onProfileSave?: (updated: SystemProfile) => Promise<void>;
 }
 
@@ -36,6 +38,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
   bills,
   profile,
   cleaningEventCount,
+  careAssessment,
   onProfileSave,
 }) => {
   const monthlyRows = useMemo(
@@ -50,6 +53,11 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
     () => calculatePaybackAnalysis(bills, profile, annual),
     [bills, profile, annual]
   );
+  const smartAnalysis = useMemo(
+    () => analyzeIntelligentPerformance(bills, profile, careAssessment),
+    [bills, profile, careAssessment]
+  );
+  const latestBill = bills.length > 0 ? bills[0] : null;
 
   const [showEditCost, setShowEditCost] = useState(false);
   const [costInput, setCostInput] = useState(String(payback.systemCostInr));
@@ -164,6 +172,30 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
       return `₹${(val / 1000).toFixed(1)}k`;
     }
     return `₹${Math.round(val).toLocaleString('en-IN')}`;
+  };
+
+  const getBillStatusPill = (status: string) => {
+    switch (status) {
+      case 'lower':
+        return { bg: '#ECFDF5', text: '#059669', border: '#A7F3D0' };
+      case 'higher':
+        return { bg: '#FEF2F2', text: '#DC2626', border: '#FECACA' };
+      case 'normal':
+      default:
+        return { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' };
+    }
+  };
+
+  const getSolarStatusPill = (status: string) => {
+    switch (status) {
+      case 'good':
+        return { bg: '#ECFDF5', text: '#059669', border: '#A7F3D0' };
+      case 'lower':
+        return { bg: '#FEF2F2', text: '#DC2626', border: '#FECACA' };
+      case 'normal':
+      default:
+        return { bg: '#E0F2FE', text: '#0284C7', border: '#BAE6FD' };
+    }
   };
 
   return (
@@ -282,7 +314,285 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
         <InfoNote text="Add your first monthly bill to see analytics." color={COLORS.info} style={styles.cardSpacing} />
       )}
 
-      {/* ── 2. Lifetime / Annual Summary ── */}
+      {/* ── 2. Smart Performance Audit (Answers the 3 Core Questions) ── */}
+      {bills.length > 0 && (
+        <Card
+          title="Smart Performance Audit"
+          subtitle={`Answers key questions for ${smartAnalysis.comparisonPeriod}`}
+          style={styles.cardSpacing}
+          badge={
+            <View
+              style={[
+                styles.badge,
+                smartAnalysis.actionCheck.severity === 'warning'
+                  ? styles.badgeWarning
+                  : smartAnalysis.actionCheck.severity === 'info'
+                  ? styles.badgeGold
+                  : styles.badgeSuccess,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.badgeText,
+                  {
+                    color:
+                      smartAnalysis.actionCheck.severity === 'warning'
+                        ? '#DC2626'
+                        : smartAnalysis.actionCheck.severity === 'info'
+                        ? '#D97706'
+                        : COLORS.success,
+                  },
+                ]}
+              >
+                {smartAnalysis.actionCheck.actionRequired ? '⚡ Action Suggested' : '✓ System Normal'}
+              </Text>
+            </View>
+          }
+        >
+          {/* Question 1: Is my electricity bill higher or lower than normal? */}
+          <View style={styles.auditSection}>
+            <View style={styles.auditHeaderRow}>
+              <View style={[styles.auditIconBadge, { backgroundColor: '#F1F5F9' }]}>
+                <Ionicons name="receipt-outline" size={16} color={COLORS.text} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.auditQuestion}>1. Is my electricity bill higher or lower than normal?</Text>
+                <Text style={styles.auditAnswer}>{smartAnalysis.threeQuestions.billAnswer}</Text>
+              </View>
+              <View
+                style={[
+                  styles.statusPill,
+                  {
+                    backgroundColor: getBillStatusPill(smartAnalysis.billAnalysis.status).bg,
+                    borderColor: getBillStatusPill(smartAnalysis.billAnalysis.status).border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusPillText,
+                    { color: getBillStatusPill(smartAnalysis.billAnalysis.status).text },
+                  ]}
+                >
+                  {smartAnalysis.billAnalysis.statusLabel}
+                </Text>
+              </View>
+            </View>
+
+            {/* Metric Comparison Strip */}
+            <View style={styles.auditComparisonRow}>
+              <View style={styles.auditMetricBox}>
+                <Text style={styles.auditMetricLabel}>LATEST BILL</Text>
+                <Text style={styles.auditMetricVal}>
+                  ₹{Math.round(smartAnalysis.billAnalysis.currentAmount).toLocaleString('en-IN')}
+                </Text>
+                <Text style={styles.auditMetricSub}>
+                  {smartAnalysis.billAnalysis.amountChangePct !== null
+                    ? `${smartAnalysis.billAnalysis.amountChangePct >= 0 ? '+' : ''}${smartAnalysis.billAnalysis.amountChangePct}% MoM`
+                    : 'Current period'}
+                </Text>
+              </View>
+
+              <View style={styles.auditMetricDivider} />
+
+              <View style={styles.auditMetricBox}>
+                <Text style={styles.auditMetricLabel}>TOTAL CONSUMED</Text>
+                <Text style={styles.auditMetricVal}>
+                  {smartAnalysis.billAnalysis.currentConsumptionKwh.toFixed(0)}{' '}
+                  <Text style={styles.auditMetricUnit}>kWh</Text>
+                </Text>
+                <Text style={styles.auditMetricSub}>
+                  ~{smartAnalysis.billAnalysis.currentDailyConsumptionKwh} kWh/day
+                </Text>
+              </View>
+
+              <View style={styles.auditMetricDivider} />
+
+              <View style={styles.auditMetricBox}>
+                <Text style={styles.auditMetricLabel}>NET GRID IMPORT</Text>
+                <Text style={styles.auditMetricVal}>
+                  {latestBill?.importKwh ?? 0} <Text style={styles.auditMetricUnit}>kWh</Text>
+                </Text>
+                <Text style={styles.auditMetricSub}>
+                  {latestBill?.closingCreditKwh ? `${latestBill.closingCreditKwh} banked` : '0 banked'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.auditExplanationBox}>
+              <Ionicons name="information-circle-outline" size={14} color={COLORS.textSub} />
+              <Text style={styles.auditExplanationText}>{smartAnalysis.billAnalysis.explanation}</Text>
+            </View>
+          </View>
+
+          <Divider style={{ marginVertical: SPACING.md }} />
+
+          {/* Question 2: Is my solar system generating enough electricity? */}
+          <View style={styles.auditSection}>
+            <View style={styles.auditHeaderRow}>
+              <View style={[styles.auditIconBadge, { backgroundColor: '#FEF3C7' }]}>
+                <Ionicons name="sunny-outline" size={16} color="#D97706" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.auditQuestion}>2. Is my solar system generating enough electricity?</Text>
+                <Text style={styles.auditAnswer}>{smartAnalysis.threeQuestions.solarAnswer}</Text>
+              </View>
+              <View
+                style={[
+                  styles.statusPill,
+                  {
+                    backgroundColor: getSolarStatusPill(smartAnalysis.solarAnalysis.status).bg,
+                    borderColor: getSolarStatusPill(smartAnalysis.solarAnalysis.status).border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusPillText,
+                    { color: getSolarStatusPill(smartAnalysis.solarAnalysis.status).text },
+                  ]}
+                >
+                  {smartAnalysis.solarAnalysis.statusLabel}
+                </Text>
+              </View>
+            </View>
+
+            {/* Solar Generation Metrics */}
+            <View style={styles.auditComparisonRow}>
+              <View style={styles.auditMetricBox}>
+                <Text style={styles.auditMetricLabel}>CYCLE PRODUCTION</Text>
+                <Text style={[styles.auditMetricVal, { color: '#D97706' }]}>
+                  {smartAnalysis.solarAnalysis.currentGenerationKwh !== null
+                    ? smartAnalysis.solarAnalysis.currentGenerationKwh
+                    : '—'}{' '}
+                  <Text style={styles.auditMetricUnit}>kWh</Text>
+                </Text>
+                <Text style={styles.auditMetricSub}>
+                  {smartAnalysis.solarAnalysis.generationChangePct !== null
+                    ? `${smartAnalysis.solarAnalysis.generationChangePct >= 0 ? '+' : ''}${smartAnalysis.solarAnalysis.generationChangePct}% MoM`
+                    : 'Current cycle'}
+                </Text>
+              </View>
+
+              <View style={styles.auditMetricDivider} />
+
+              <View style={styles.auditMetricBox}>
+                <Text style={styles.auditMetricLabel}>DAILY YIELD</Text>
+                <Text style={styles.auditMetricVal}>
+                  {smartAnalysis.solarAnalysis.currentYieldKwhPerKwDay !== null
+                    ? `${smartAnalysis.solarAnalysis.currentYieldKwhPerKwDay}`
+                    : '—'}{' '}
+                  <Text style={styles.auditMetricUnit}>kWh/kW/d</Text>
+                </Text>
+                <Text style={styles.auditMetricSub}>
+                  ~{smartAnalysis.solarAnalysis.currentDailyGenKwh ?? '—'} kWh/day
+                </Text>
+              </View>
+
+              <View style={styles.auditMetricDivider} />
+
+              <View style={styles.auditMetricBox}>
+                <Text style={styles.auditMetricLabel}>GOA BENCHMARK</Text>
+                <Text style={styles.auditMetricVal}>
+                  {smartAnalysis.solarAnalysis.benchmarkYieldKwhPerKwDay}{' '}
+                  <Text style={styles.auditMetricUnit}>kWh/kW/d</Text>
+                </Text>
+                <Text style={styles.auditMetricSub}>
+                  {smartAnalysis.solarAnalysis.season === 'monsoon' ? 'Monsoon overcast' : 'Sunny baseline'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.auditExplanationBox}>
+              <Ionicons name="sparkles-outline" size={14} color="#D97706" />
+              <Text style={styles.auditExplanationText}>{smartAnalysis.solarAnalysis.explanation}</Text>
+            </View>
+
+            {smartAnalysis.solarAnalysis.diagnosticAdvice.length > 0 && (
+              <View style={styles.auditAdviceBox}>
+                {smartAnalysis.solarAnalysis.diagnosticAdvice.map((advice, idx) => (
+                  <View key={idx} style={styles.auditAdviceRow}>
+                    <Ionicons name="checkmark-circle" size={13} color="#059669" />
+                    <Text style={styles.auditAdviceText}>{advice}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          <Divider style={{ marginVertical: SPACING.md }} />
+
+          {/* Question 3: Should I take any action? */}
+          <View style={styles.auditSection}>
+            <View style={styles.auditHeaderRow}>
+              <View
+                style={[
+                  styles.auditIconBadge,
+                  {
+                    backgroundColor:
+                      smartAnalysis.actionCheck.severity === 'warning'
+                        ? '#FEF2F2'
+                        : smartAnalysis.actionCheck.severity === 'info'
+                        ? '#EFF6FF'
+                        : '#ECFDF5',
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={
+                    smartAnalysis.actionCheck.severity === 'warning'
+                      ? 'alert-circle-outline'
+                      : smartAnalysis.actionCheck.severity === 'info'
+                      ? 'information-circle-outline'
+                      : 'shield-checkmark-outline'
+                  }
+                  size={16}
+                  color={
+                    smartAnalysis.actionCheck.severity === 'warning'
+                      ? '#DC2626'
+                      : smartAnalysis.actionCheck.severity === 'info'
+                      ? '#2563EB'
+                      : '#059669'
+                  }
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.auditQuestion}>3. Should I take any action?</Text>
+                <Text style={styles.auditActionTitle}>{smartAnalysis.actionCheck.title}</Text>
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.auditActionBanner,
+                smartAnalysis.actionCheck.severity === 'warning'
+                  ? styles.auditActionWarning
+                  : smartAnalysis.actionCheck.severity === 'info'
+                  ? styles.auditActionInfo
+                  : styles.auditActionSuccess,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.auditActionRecText,
+                  {
+                    color:
+                      smartAnalysis.actionCheck.severity === 'warning'
+                        ? '#991B1B'
+                        : smartAnalysis.actionCheck.severity === 'info'
+                        ? '#1E40AF'
+                        : '#065F46',
+                  },
+                ]}
+              >
+                {smartAnalysis.actionCheck.recommendation}
+              </Text>
+            </View>
+          </View>
+        </Card>
+      )}
+
+      {/* ── 3. Lifetime / Annual Summary ── */}
       {bills.length > 0 && (
         <Card
           title="Lifetime Summary"
@@ -630,6 +940,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFBEB',
     borderWidth: 1,
     borderColor: '#FDE68A',
+  },
+  badgeWarning: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
   badgeText: {
     fontSize: 11,
@@ -979,5 +1294,147 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: FONT.bold,
     color: COLORS.textInverse,
+  },
+
+  // ── Smart Audit Section Styles ──
+  auditSection: {
+    paddingVertical: 2,
+  },
+  auditHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  auditIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  auditQuestion: {
+    fontSize: 13,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  auditAnswer: {
+    fontSize: 12,
+    color: COLORS.textSub,
+    lineHeight: 17,
+  },
+  auditComparisonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceRaised,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xs,
+    marginVertical: SPACING.xs,
+  },
+  auditMetricBox: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  auditMetricLabel: {
+    fontSize: 9,
+    fontWeight: FONT.bold,
+    color: COLORS.textMuted,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  auditMetricVal: {
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+  auditMetricUnit: {
+    fontSize: 10,
+    fontWeight: FONT.regular,
+    color: COLORS.textMuted,
+  },
+  auditMetricSub: {
+    fontSize: 10,
+    color: COLORS.textSub,
+    marginTop: 2,
+  },
+  auditMetricDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: COLORS.border,
+  },
+  auditExplanationBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 7,
+    marginTop: 6,
+  },
+  auditExplanationText: {
+    fontSize: 11,
+    color: COLORS.textSub,
+    flex: 1,
+    lineHeight: 16,
+  },
+  auditAdviceBox: {
+    marginTop: 6,
+    gap: 4,
+  },
+  auditAdviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  auditAdviceText: {
+    fontSize: 11,
+    color: COLORS.text,
+    flex: 1,
+  },
+  auditActionTitle: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.textSub,
+    marginTop: 1,
+  },
+  auditActionBanner: {
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm + 2,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  auditActionRecText: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: FONT.medium,
+  },
+  auditActionSuccess: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  auditActionWarning: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  auditActionInfo: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: FONT.bold,
   },
 });
