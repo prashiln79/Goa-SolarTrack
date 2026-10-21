@@ -111,8 +111,8 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
                   placeholder="e.g. 1002345678"
                   placeholderTextColor={COLORS.textMuted}
                   value={consumerNum}
-                  onChangeText={setConsumerNum}
-                  autoCapitalize="characters"
+                  onChangeText={(text) => setConsumerNum(text.replace(/[^0-9]/g, ''))}
+                  keyboardType="number-pad"
                   autoCorrect={false}
                   editable={!isLoading}
                 />

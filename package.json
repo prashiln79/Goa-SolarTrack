@@ -30,8 +30,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test": "node --experimental-strip-types scripts/test_pdf_parser.mjs",
-    "build:apk": "eas build -p android --profile preview",
-    "build:aab": "eas build -p android --profile production",
+    "build:apk": "npm_config_cache=$HOME/.npm-user-cache ANDROID_HOME=$HOME/Library/Android/sdk ANDROID_SDK_ROOT=$HOME/Library/Android/sdk eas build -p android --profile preview --local",
+    "build:aab": "npm_config_cache=$HOME/.npm-user-cache ANDROID_HOME=$HOME/Library/Android/sdk ANDROID_SDK_ROOT=$HOME/Library/Android/sdk eas build -p android --profile production --local",
     "lint": "expo lint"
   },
   "private": true
