@@ -40,9 +40,9 @@ Docs: https://docs.expo.dev/eas/index.md
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
 
-## Git & Branching Rules
+## Git & Commit Rules
 
-- **CRITICAL: NEVER push directly to the `main` or `master` branch under any circumstances.**
-- Do not run `git push origin main` or any force push commands automatically.
-- All code changes must be committed locally or pushed to a dedicated feature branch (e.g. `feature/<name>`) upon explicit user request.
-- The repository has an active pre-push guard hook (`.git/hooks/pre-push`) to reject direct pushes to `main`.
+- **CRITICAL: NEVER run `git push` or `git commit` automatically.**
+- **Leave all changes in the working tree** so the user can review diffs, choose what to stage, craft their own commit messages, and push manually.
+- Never push to `main`, `master`, or any branch.
+- The repository has an active pre-push guard hook (`.git/hooks/pre-push`) as a safeguard against accidental direct pushes to `main`.
