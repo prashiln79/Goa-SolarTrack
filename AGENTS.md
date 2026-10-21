@@ -45,4 +45,3 @@ Docs: https://docs.expo.dev/eas/index.md
 - **CRITICAL: NEVER run `git push` or `git commit` automatically.**
 - **Leave all changes in the working tree** so the user can review diffs, choose what to stage, craft their own commit messages, and push manually.
 - Never push to `main`, `master`, or any branch.
-- The repository has an active pre-push guard hook (`.git/hooks/pre-push`) as a safeguard against accidental direct pushes to `main`.
