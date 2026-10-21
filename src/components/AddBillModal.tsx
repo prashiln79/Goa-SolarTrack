@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { File as ExpoFile } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SolarBill, SystemProfile } from '../types/solar';
 import { calculateEnergyAccounting } from '../domain/energyAccounting';
 import { parseBillPdf, extractTextFromPdfContent, parseGoaBillText } from '../services/billPdfParser';
@@ -179,6 +180,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   profile,
   existingBills,
 }) => {
+  const insets = useSafeAreaInsets();
+
   // ── Month & Year state ──
   const now = new Date();
   const [selectedYear, setSelectedYear]   = useState(now.getFullYear());
@@ -1527,7 +1530,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
           </ScrollView>
 
           {/* ── Modal Footer ── */}
-          <View style={styles.footer}>
+          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
             {/* Save error shown inline above buttons */}
             {saveError && (
               <View style={styles.saveErrorBar}>
@@ -2122,7 +2125,7 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'column',
     paddingHorizontal: SPACING.md,
-    paddingVertical: 14,
+    paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
     backgroundColor: COLORS.surface,

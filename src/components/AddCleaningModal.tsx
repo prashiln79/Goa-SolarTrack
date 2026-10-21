@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, StyleSheet, Modal, TouchableOpacity,
   Alert, KeyboardAvoidingView, ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CleaningEvent } from '../types/solar';
 import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
@@ -17,6 +18,7 @@ interface AddCleaningModalProps {
 export const AddCleaningModal: React.FC<AddCleaningModalProps> = ({
   visible, onClose, onSave,
 }) => {
+  const insets = useSafeAreaInsets();
   const today = new Date().toISOString().split('T')[0];
   const [date, setDate]         = useState(today);
   const [provider, setProvider] = useState('Self-cleaned');
@@ -118,7 +120,7 @@ export const AddCleaningModal: React.FC<AddCleaningModalProps> = ({
             </View>
           </ScrollView>
 
-          <View style={styles.footer}>
+          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
             <TouchableOpacity id="btn-cancel-cleaning" style={styles.cancelBtn} onPress={onClose}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
@@ -177,7 +179,7 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row', gap: SPACING.sm,
     paddingHorizontal: SPACING.lg,
-    paddingVertical: 10,
+    paddingTop: 10,
     borderTopWidth: 1, borderTopColor: COLORS.border,
     backgroundColor: COLORS.surface,
   },

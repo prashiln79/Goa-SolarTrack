@@ -50,6 +50,19 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
       return;
     }
 
+    if (!trimmed.startsWith('600')) {
+      Alert.alert('Invalid Prefix', "Electricity Consumer Number must start with '600' (e.g. 60012345678).");
+      return;
+    }
+
+    if (trimmed.length !== 11) {
+      Alert.alert(
+        'Invalid Length',
+        `Electricity Consumer Number must be exactly 11 digits (currently ${trimmed.length} digits).`
+      );
+      return;
+    }
+
     const capNum = parseFloat(capacity) || 5.0;
 
     try {
@@ -108,18 +121,29 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
                 <TextInput
                   id="input-consumer-number"
                   style={styles.textInput}
-                  placeholder="e.g. 1002345678"
+                  placeholder="e.g. 60012345678"
                   placeholderTextColor={COLORS.textMuted}
                   value={consumerNum}
                   onChangeText={(text) => setConsumerNum(text.replace(/[^0-9]/g, ''))}
                   keyboardType="number-pad"
+                  maxLength={11}
                   autoCorrect={false}
                   editable={!isLoading}
                 />
               </View>
-              <Text style={styles.helperText}>
-                Found at the top of your Goa Electricity Department (EDG) bill.
-              </Text>
+              <View style={styles.helperRow}>
+                <Text style={styles.helperText}>
+                  11 digits starting with 600 (from your bill)
+                </Text>
+                <Text
+                  style={[
+                    styles.counterText,
+                    consumerNum.length === 11 && consumerNum.startsWith('600') && styles.counterValid,
+                  ]}
+                >
+                  {consumerNum.length}/11
+                </Text>
+              </View>
 
               {/* Advanced / Optional Initial Setup */}
               <TouchableOpacity
@@ -299,11 +323,27 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontWeight: FONT.semi,
   },
-  helperText: {
-    fontSize: 12,
-    color: COLORS.textMuted,
+  helperRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: 6,
     marginBottom: SPACING.md,
+  },
+  helperText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginRight: SPACING.xs,
+  },
+  counterText: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.textMuted,
+  },
+  counterValid: {
+    color: COLORS.success,
+    fontWeight: FONT.bold,
   },
   advancedToggle: {
     flexDirection: 'row',
