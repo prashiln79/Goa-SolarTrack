@@ -11,6 +11,7 @@ import {
   Text,
   StatusBar as RNStatusBar,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {
   SafeAreaProvider,
@@ -41,6 +42,7 @@ import {
   getCleaningEvents,
   getLocalCleaningEvents,
   saveCleaningEvent,
+  deleteCleaningEvent,
   getSystemProfile,
   getLocalSystemProfile,
   saveSystemProfile,
@@ -110,7 +112,9 @@ function MainApp() {
 
   // ── Load data for a specific consumer ──────────────────────
   const loadAll = useCallback(async (cNum?: string) => {
-    const targetConsumer = cNum ?? consumerNumber ?? getActiveConsumerNumber();
+    const targetConsumer = (cNum && cNum.trim())
+      || (consumerNumber && consumerNumber.trim())
+      || getActiveConsumerNumber();
     if (!targetConsumer) {
       setBills([]);
       setCleanings([]);
@@ -130,8 +134,11 @@ function MainApp() {
       if (fetchedProfile) {
         setProfile(fetchedProfile);
       } else {
-        const fallback = createDefaultProfile(targetConsumer);
-        setProfile(fallback);
+        setProfile((prev) =>
+          prev.consumerNumber === targetConsumer && (prev.updatedAt ?? 0) > 0
+            ? prev
+            : createDefaultProfile(targetConsumer)
+        );
       }
     } catch (err) {
       console.error('loadAll error:', err);
@@ -257,9 +264,35 @@ function MainApp() {
     await loadAll();
   };
 
+  const handleDeleteCleaning = async (id: string) => {
+    try {
+      // Optimistic update: remove instantly from UI
+      setCleanings((prev) => prev.filter((e) => e.id !== id));
+      const cNum = consumerNumber || profile.consumerNumber || getActiveConsumerNumber() || 'primary';
+      await deleteCleaningEvent(id, cNum);
+      await loadAll(cNum);
+    } catch (err: any) {
+      console.error('Delete cleaning error:', err);
+      Alert.alert('Delete Failed', err?.message ?? 'Could not delete maintenance record.');
+      await loadAll();
+    }
+  };
+
   const handleSaveProfile = async (updated: SystemProfile) => {
-    await saveSystemProfile(updated);
-    setProfile(updated);
+    const cNum = (consumerNumber && consumerNumber.trim())
+      || (updated.consumerNumber && updated.consumerNumber.trim())
+      || (profile.consumerNumber && profile.consumerNumber.trim())
+      || getActiveConsumerNumber()
+      || 'primary';
+    const profileToSave: SystemProfile = {
+      ...updated,
+      id: cNum,
+      consumerNumber: cNum,
+      capacityKw: Number(updated.capacityKw) || 5.0,
+      updatedAt: Date.now(),
+    };
+    await saveSystemProfile(profileToSave, cNum);
+    setProfile(profileToSave);
   };
 
   const handleSeedCanonical = async () => {
@@ -334,6 +367,8 @@ function MainApp() {
             cleaningEvents={cleanings}
             profile={profile}
             onLogClean={() => setIsAddCleanOpen(true)}
+            onSaveClean={handleSaveCleaning}
+            onDeleteClean={handleDeleteCleaning}
           />
         )}
         {activeTab === 'settings' && (

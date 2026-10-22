@@ -106,8 +106,8 @@ export function createDefaultProfile(
   return {
     id: clean,
     consumerNumber: clean,
-    systemName: initialData?.systemName || `Consumer ${clean}`,
-    capacityKw: initialData?.capacityKw ?? 5.0,
+    systemName: initialData?.systemName || (clean ? `Consumer ${clean}` : 'My Solar Rooftop'),
+    capacityKw: initialData?.capacityKw !== undefined ? Number(initialData.capacityKw) : 5.0,
     location: initialData?.location || 'Goa, India',
     taluka: initialData?.taluka || '',
     tariffCategory: initialData?.tariffCategory || 'LTDS-II-SOLAR',
@@ -116,9 +116,9 @@ export function createDefaultProfile(
     inverterMake: initialData?.inverterMake,
     inverterModel: initialData?.inverterModel,
     lastCleanedDate: initialData?.lastCleanedDate,
-    settlementRateInr: initialData?.settlementRateInr ?? 3.50,
-    systemCostInr: initialData?.systemCostInr,
-    updatedAt: initialData?.updatedAt ?? Date.now(),
+    settlementRateInr: initialData?.settlementRateInr !== undefined ? Number(initialData.settlementRateInr) : 3.50,
+    systemCostInr: initialData?.systemCostInr !== undefined ? Number(initialData.systemCostInr) : undefined,
+    updatedAt: initialData?.updatedAt ?? 0,
   };
 }
 
@@ -392,10 +392,42 @@ export async function saveCleaningEvent(event: CleaningEvent, consumerNumber?: s
   }
 }
 
+export async function deleteCleaningEvent(eventId: string, consumerNumber?: string): Promise<void> {
+  const cNum = consumerNumber ?? _activeConsumerNumber ?? 'primary';
+
+  // 1. Remove from local cache
+  const keys = getKeys(cNum);
+  const current = await getCleaningEvents(cNum);
+  const updated = current.filter((e) => e.id !== eventId);
+  await AsyncStorage.setItem(keys.CLEANINGS, JSON.stringify(updated));
+
+  // Recalculate lastCleanedDate on profile
+  const remainingCleans = updated.filter((e) => !e.skipped);
+  const latestDate =
+    remainingCleans.length > 0
+      ? remainingCleans.reduce((max, e) => (e.date > max ? e.date : max), remainingCleans[0].date)
+      : undefined;
+
+  const profile = (await getLocalSystemProfile(cNum)) || (await getSystemProfile(cNum));
+  if (profile) {
+    await saveSystemProfile({ ...profile, lastCleanedDate: latestDate }, cNum);
+  }
+
+  // 2. Delete from Firestore subcollection: solar/{consumerNumber}/cleanings/{eventId}
+  try {
+    await deleteDoc(doc(db, 'solar', cNum, 'cleanings', eventId));
+    setSyncStatus({ lastSyncedAt: new Date(), message: 'Maintenance record removed' });
+  } catch (err: any) {
+    console.error('Delete cleaning error from Firestore:', err);
+  }
+}
+
 // ── System Profile (Document: solar/{consumerNumber}) ─────────
 
 export async function getSystemProfile(consumerNumber?: string): Promise<SystemProfile | null> {
-  const cNum = consumerNumber ?? _activeConsumerNumber ?? 'primary';
+  const cNum = (consumerNumber && consumerNumber.trim())
+    || (_activeConsumerNumber && _activeConsumerNumber.trim())
+    || 'primary';
   const keys = getKeys(cNum);
 
   // Load existing local cache first
@@ -411,31 +443,35 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
       const remoteTime = remote.updatedAt ?? 0;
 
       let resolved: SystemProfile;
-      if (localTime > remoteTime && localProfile) {
-        // Local is newer: preserve local customizations and push update to Firestore
+      if (localTime > remoteTime && localProfile && localTime > 0) {
+        // Local is strictly newer: preserve local customizations and push update to Firestore
         resolved = {
           ...remote,
           ...localProfile,
           id: cNum,
           consumerNumber: cNum,
+          capacityKw: Number(localProfile.capacityKw) || Number(remote.capacityKw) || 5.0,
         };
-        setDoc(doc(db, 'solar', cNum), cleanForFirestore(resolved)).catch(() => {});
+        setDoc(doc(db, 'solar', cNum), cleanForFirestore(resolved), { merge: true }).catch(() => {});
       } else {
-        // Remote is equal or newer: merge so local fields are not erased if remote missed them
+        // Remote from Firebase is the source of truth!
         resolved = {
           ...(localProfile || {}),
           ...remote,
           id: cNum,
           consumerNumber: cNum,
-          systemCostInr: remote.systemCostInr ?? localProfile?.systemCostInr,
-          capacityKw: remote.capacityKw || localProfile?.capacityKw || 5.0,
+          capacityKw: Number(remote.capacityKw) || Number(localProfile?.capacityKw) || 5.0,
+          systemCostInr: remote.systemCostInr !== undefined ? Number(remote.systemCostInr) : localProfile?.systemCostInr,
+          updatedAt: remote.updatedAt || Date.now(),
         };
       }
 
       await AsyncStorage.setItem(keys.PROFILE, JSON.stringify(resolved));
       return resolved;
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('Error reading system profile from Firestore:', err);
+  }
 
   // Also check legacy doc solar/{cNum}_profile
   try {
@@ -448,21 +484,29 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
         id: cNum,
         consumerNumber: cNum,
         systemCostInr: p.systemCostInr ?? localProfile?.systemCostInr,
-        capacityKw: p.capacityKw || localProfile?.capacityKw || 5.0,
+        capacityKw: Number(p.capacityKw) || Number(localProfile?.capacityKw) || 5.0,
         updatedAt: p.updatedAt ?? Date.now(),
       };
-      await setDoc(doc(db, 'solar', cNum), cleanForFirestore(merged));
+      await setDoc(doc(db, 'solar', cNum), cleanForFirestore(merged), { merge: true });
       await AsyncStorage.setItem(keys.PROFILE, JSON.stringify(merged));
       return merged;
     }
   } catch (_) {}
 
-  // 2. Fallback: Local Cache
-  return localProfile;
+  // 2. Fallback: Local Cache (if user saved profile previously while offline)
+  if (localProfile) {
+    return localProfile;
+  }
+
+  // 3. First time user: return default profile
+  return null;
 }
 
 export async function saveSystemProfile(profile: SystemProfile, consumerNumber?: string): Promise<void> {
-  const cNum = consumerNumber ?? profile.consumerNumber ?? _activeConsumerNumber ?? 'primary';
+  const cNum = (consumerNumber && consumerNumber.trim())
+    || (profile.consumerNumber && profile.consumerNumber.trim())
+    || (_activeConsumerNumber && _activeConsumerNumber.trim())
+    || 'primary';
 
   // Merge with existing local profile to guarantee no fields are dropped
   const existingLocal = await getLocalSystemProfile(cNum);
@@ -472,6 +516,7 @@ export async function saveSystemProfile(profile: SystemProfile, consumerNumber?:
     ...profile,
     id: cNum,
     consumerNumber: cNum,
+    capacityKw: Number(profile.capacityKw) || Number(existingLocal?.capacityKw) || 5.0,
     updatedAt: Date.now(),
   };
 
@@ -479,14 +524,15 @@ export async function saveSystemProfile(profile: SystemProfile, consumerNumber?:
   await AsyncStorage.setItem(keys.PROFILE, JSON.stringify(profileWithConsumer));
 
   try {
-    await setDoc(doc(db, 'solar', cNum), cleanForFirestore(profileWithConsumer));
+    await setDoc(doc(db, 'solar', cNum), cleanForFirestore(profileWithConsumer), { merge: true });
     setSyncStatus({
       isFirestoreConnected: true,
       lastSyncedAt: new Date(),
-      message: 'Profile saved & synced',
+      message: 'Profile saved & synced with cloud',
     });
   } catch (err: any) {
     console.error('Profile save error:', err);
+    throw err;
   }
 }
 

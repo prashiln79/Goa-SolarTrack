@@ -20,6 +20,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
 import { SystemProfile } from '../types/solar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface ConsumerOnboardingModalProps {
   visible: boolean;
@@ -36,6 +37,7 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
   onClose,
   onConnect,
 }) => {
+  const insets = useSafeAreaInsets();
   const [consumerNum, setConsumerNum] = useState(currentConsumerNumber ?? '');
   const [capacity, setCapacity] = useState('5.0');
   const [location, setLocation] = useState('Panaji, Goa');
@@ -63,15 +65,17 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
       return;
     }
 
-    const capNum = parseFloat(capacity) || 5.0;
+    const profileDetails: Partial<SystemProfile> = {};
+    if (showAdvanced) {
+      const capNum = parseFloat(capacity);
+      if (!isNaN(capNum) && capNum > 0) profileDetails.capacityKw = capNum;
+      if (location.trim()) profileDetails.location = location.trim();
+      if (systemName.trim()) profileDetails.systemName = systemName.trim();
+    }
 
     try {
       setIsLoading(true);
-      await onConnect(trimmed, {
-        capacityKw: capNum,
-        location: location.trim() || 'Goa, India',
-        systemName: systemName.trim() || `Consumer ${trimmed}`,
-      });
+      await onConnect(trimmed, Object.keys(profileDetails).length > 0 ? profileDetails : undefined);
       setIsLoading(false);
     } catch (err: any) {
       setIsLoading(false);
@@ -88,7 +92,7 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
         if (canCancel && onClose) onClose();
       }}
     >
-      <KeyboardAvoidingView style={styles.overlay}>
+      <KeyboardAvoidingView style={[styles.overlay, { paddingTop: Math.max(insets.top, SPACING.lg), paddingBottom: Math.max(insets.bottom, SPACING.lg) }]}>
         <View style={styles.card}>
           <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
             {/* Header */}

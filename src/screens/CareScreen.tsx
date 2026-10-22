@@ -1,25 +1,107 @@
 // ============================================================
-// Care Screen — PRD §8 Panel Care & Cleaning Intelligence
-// Clean, minimal, and spacious layout
+// Solar Care Screen — Simple, Human-Centric Maintenance Checklist
+// Adheres to 5 Rules:
+// 1. Show only important tasks (panel cleaning, inverter check, roof inspection)
+// 2. Use everyday language
+// 3. Show one clear date ("Due in 3 days" / "Overdue by 2 days")
+// 4. Easy completion (1-tap complete, auto-reschedules next task)
+// 5. Hide technical details (collapsible recent history)
 // ============================================================
-import React from 'react';
+
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert,
+  Modal,
+  Platform,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CareAssessment, CleaningEvent, SystemProfile } from '../types/solar';
-import { Card, InfoNote, ProgressBar } from '../components/ui/UIKit';
-import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
+import { Card } from '../components/ui/UIKit';
+import { DateField } from '../components/ui/DatePickerModal';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
 
 interface CareScreenProps {
   careAssessment: CareAssessment;
   cleaningEvents: CleaningEvent[];
   profile: SystemProfile;
   onLogClean: () => void;
+  onSaveClean?: (event: CleaningEvent) => Promise<void> | void;
+  onDeleteClean?: (eventId: string) => Promise<void> | void;
+}
+
+interface MaintenanceTask {
+  id: string;
+  title: string;
+  description: string;
+  frequencyDays: number;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconBg: string;
+  iconColor: string;
+  providerTag: string;
+}
+
+const DEFAULT_TASKS: MaintenanceTask[] = [
+  {
+    id: 'task-clean',
+    title: 'Clean solar panels',
+    description: 'Remove dust and dirt to restore energy output',
+    frequencyDays: 30, // 30-day recommended cycle for Goa
+    icon: 'water',
+    iconBg: '#FEF3C7',
+    iconColor: '#D97706',
+    providerTag: 'Panel wash',
+  },
+  {
+    id: 'task-inverter',
+    title: 'Check inverter',
+    description: 'Check for green normal light and error codes on screen',
+    frequencyDays: 60,
+    icon: 'flash',
+    iconBg: '#EFF6FF',
+    iconColor: '#2563EB',
+    providerTag: 'Inverter check',
+  },
+  {
+    id: 'task-roof',
+    title: 'Visual roof inspection',
+    description: 'Check panel mounting brackets, rust & loose wires',
+    frequencyDays: 180,
+    icon: 'shield-checkmark',
+    iconBg: '#ECFDF5',
+    iconColor: '#059669',
+    providerTag: 'Roof inspection',
+  },
+];
+
+// ── Date calculation helpers ─────────────────────────────────
+function parseDate(ymd: string): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function formatDateYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatFriendlyDate(ymd: string): string {
+  if (!ymd) return 'Not recorded';
+  try {
+    const d = parseDate(ymd);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  } catch {
+    return ymd;
+  }
 }
 
 export const CareScreen: React.FC<CareScreenProps> = ({
@@ -27,13 +109,165 @@ export const CareScreen: React.FC<CareScreenProps> = ({
   cleaningEvents,
   profile,
   onLogClean,
+  onSaveClean,
+  onDeleteClean,
 }) => {
-  const stateColor =
-    careAssessment.state === 'Good'
-      ? COLORS.success
-      : careAssessment.state === 'Watch'
-      ? COLORS.warning
-      : COLORS.danger;
+  const insets = useSafeAreaInsets();
+  const todayYMD = useMemo(() => formatDateYMD(new Date()), []);
+
+  // Notifications enabled state (local preference)
+  const [remindersEnabled, setRemindersEnabled] = useState(true);
+
+  // History expansion state
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+
+  // Completion modal state
+  const [completingTask, setCompletingTask] = useState<MaintenanceTask | null>(null);
+  const [completionDate, setCompletionDate] = useState(todayYMD);
+  const [completionNotes, setCompletionNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ── Calculate due status for each task ──────────────────────
+  const tasksWithSchedule = useMemo(() => {
+    return DEFAULT_TASKS.map((task) => {
+      // Find latest completed event matching this task
+      let lastCompletedDate: string | null = null;
+
+      if (task.id === 'task-clean') {
+        const cleanEvt = cleaningEvents.find(
+          (e) => !e.skipped && e.provider !== 'Inverter check' && e.provider !== 'Roof inspection'
+        );
+        lastCompletedDate = cleanEvt?.date || profile.lastCleanedDate || null;
+      } else {
+        const matchEvt = cleaningEvents.find((e) => e.provider === task.providerTag);
+        lastCompletedDate = matchEvt?.date || null;
+      }
+
+      // Calculate next due date
+      let nextDueDate: Date;
+      if (lastCompletedDate) {
+        const last = parseDate(lastCompletedDate);
+        nextDueDate = new Date(last.getTime() + task.frequencyDays * 86400000);
+      } else {
+        // If never completed, default to frequency from today
+        const now = new Date();
+        nextDueDate = new Date(now.getTime() + (task.id === 'task-clean' ? 3 : 14) * 86400000);
+      }
+
+      const nextDueDateStr = formatDateYMD(nextDueDate);
+      const diffMs = nextDueDate.getTime() - new Date().setHours(0, 0, 0, 0);
+      const diffDays = Math.round(diffMs / 86400000);
+
+      let dueText = '';
+      let dueSeverity: 'normal' | 'soon' | 'overdue' = 'normal';
+
+      if (diffDays < 0) {
+        const daysPast = Math.abs(diffDays);
+        dueText = `Overdue by ${daysPast} day${daysPast === 1 ? '' : 's'}`;
+        dueSeverity = 'overdue';
+      } else if (diffDays === 0) {
+        dueText = 'Due today';
+        dueSeverity = 'soon';
+      } else if (diffDays <= 7) {
+        dueText = `Due in ${diffDays} day${diffDays === 1 ? '' : 's'}`;
+        dueSeverity = 'soon';
+      } else {
+        dueText = `Due in ${diffDays} days (${formatFriendlyDate(nextDueDateStr)})`;
+        dueSeverity = 'normal';
+      }
+
+      return {
+        ...task,
+        lastCompletedDate,
+        nextDueDateStr,
+        diffDays,
+        dueText,
+        dueSeverity,
+      };
+    });
+  }, [cleaningEvents, profile.lastCleanedDate]);
+
+  // Overall system summary status
+  const overdueTasks = tasksWithSchedule.filter((t) => t.dueSeverity === 'overdue');
+  const soonTasks = tasksWithSchedule.filter((t) => t.dueSeverity === 'soon');
+  const nextTask = [...tasksWithSchedule].sort((a, b) => a.diffDays - b.diffDays)[0];
+
+  // Most recent completed maintenance event
+  const mostRecentEvent = cleaningEvents.length > 0 ? cleaningEvents[0] : null;
+
+  // ── Handle Task Completion ──────────────────────────────────
+  const handleOpenCompleteModal = (task: MaintenanceTask) => {
+    setCompletingTask(task);
+    setCompletionDate(todayYMD);
+    setCompletionNotes('');
+  };
+
+  const handleConfirmCompletion = async () => {
+    if (!completingTask) return;
+
+    try {
+      setIsSubmitting(true);
+      const newEvent: CleaningEvent = {
+        id: `maint-${Date.now()}`,
+        date: completionDate || todayYMD,
+        provider: completingTask.providerTag,
+        notes: completionNotes.trim() || `${completingTask.title} completed`,
+        cost: 0,
+        createdAt: Date.now(),
+      };
+
+      if (onSaveClean) {
+        await onSaveClean(newEvent);
+      }
+
+      const nextDate = new Date(parseDate(newEvent.date).getTime() + completingTask.frequencyDays * 86400000);
+      const formattedNext = formatFriendlyDate(formatDateYMD(nextDate));
+
+      setIsSubmitting(false);
+      setCompletingTask(null);
+
+      Alert.alert(
+        'Task Completed! 🎉',
+        `Great job! "${completingTask.title}" has been saved to your records.\n\nNext check is scheduled for ${formattedNext}.`
+      );
+    } catch (e: any) {
+      setIsSubmitting(false);
+      Alert.alert('Save Failed', e?.message || 'Could not record task completion.');
+    }
+  };
+
+  const handleToggleReminders = () => {
+    const nextState = !remindersEnabled;
+    setRemindersEnabled(nextState);
+    Alert.alert(
+      nextState ? 'Reminders Turned On' : 'Reminders Muted',
+      nextState
+        ? 'You will receive gentle notifications when panel care is due.'
+        : 'Maintenance reminder notifications are now turned off.'
+    );
+  };
+
+  const confirmDelete = (event: CleaningEvent) => {
+    const message = `Are you sure you want to delete the record for ${event.date} (${event.skipped ? 'Skipped' : event.provider ?? 'Cleaning'})?`;
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(message)) {
+        if (onDeleteClean) onDeleteClean(event.id);
+      }
+      return;
+    }
+
+    Alert.alert('Delete Record', message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          if (onDeleteClean) onDeleteClean(event.id);
+        },
+      },
+    ]);
+  };
 
   return (
     <ScrollView
@@ -41,223 +275,324 @@ export const CareScreen: React.FC<CareScreenProps> = ({
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Top Bar ── */}
-      <View style={styles.topBar}>
-        <View>
-          <Text style={styles.pageTitle}>Panel Care</Text>
-          <Text style={styles.pageSub}>{profile.location} · Goa Climate-Aware</Text>
-        </View>
-        <TouchableOpacity
-          id="btn-log-clean-care"
-          style={styles.logBtn}
-          onPress={onLogClean}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="water-outline" size={15} color={COLORS.textInverse} />
-          <Text style={styles.logBtnText}>Log Wash</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── 1. Status Hero Card ── */}
+      {/* ── Solar Care Status Card ── */}
       <Card
-        title="Soiling Assessment"
-        subtitle={`Last cleaned: ${profile.lastCleanedDate ?? 'Not recorded'} · ${careAssessment.daysSinceLastClean} days ago`}
-        style={styles.cardSpacing}
+        title="Solar Care"
+        subtitle="Keep your solar system in good shape"
+        style={styles.heroCard}
         badge={
-          <View
-            style={[
-              styles.stateBadge,
-              {
-                backgroundColor: `${stateColor}15`,
-                borderColor: `${stateColor}40`,
-              },
-            ]}
-          >
-            <Text style={[styles.stateBadgeText, { color: stateColor }]}>
-              {careAssessment.state}
-            </Text>
-          </View>
-        }
-      >
-        <View style={styles.heroRow}>
-          <View
-            style={[
-              styles.statusIconBox,
-              {
-                backgroundColor: `${stateColor}15`,
-                borderColor: `${stateColor}35`,
-              },
-            ]}
+          <TouchableOpacity
+            id="btn-toggle-care-reminders"
+            style={[styles.bellBtn, remindersEnabled && styles.bellBtnActive]}
+            onPress={handleToggleReminders}
+            activeOpacity={0.7}
           >
             <Ionicons
+              name={remindersEnabled ? 'notifications' : 'notifications-off-outline'}
+              size={17}
+              color={remindersEnabled ? COLORS.gold : COLORS.textMuted}
+            />
+          </TouchableOpacity>
+        }
+      >
+        <View
+          style={[
+            styles.statusHero,
+            overdueTasks.length > 0
+              ? styles.statusHeroOverdue
+              : soonTasks.length > 0
+              ? styles.statusHeroSoon
+              : styles.statusHeroCaughtUp,
+          ]}
+        >
+          <View style={styles.statusHeroIconBox}>
+            <Ionicons
               name={
-                careAssessment.state === 'Good'
-                  ? 'sparkles'
-                  : careAssessment.state === 'Watch'
-                  ? 'eye-outline'
-                  : 'warning-outline'
+                overdueTasks.length > 0
+                  ? 'alert-circle'
+                  : soonTasks.length > 0
+                  ? 'time'
+                  : 'checkmark-circle'
               }
-              size={24}
-              color={stateColor}
+              size={22}
+              color={
+                overdueTasks.length > 0
+                  ? COLORS.danger
+                  : soonTasks.length > 0
+                  ? COLORS.warning
+                  : COLORS.success
+              }
             />
           </View>
-          <View style={styles.heroTextCol}>
-            <Text style={styles.rationaleText}>{careAssessment.rationale}</Text>
-            {careAssessment.recommendation ? (
-              <Text style={styles.recommendationText}>{careAssessment.recommendation}</Text>
-            ) : null}
-          </View>
-        </View>
-
-        {/* Health Index Progress */}
-        <View style={styles.healthContainer}>
-          <View style={styles.healthLabelRow}>
-            <Text style={styles.healthLabel}>Panel Health Index</Text>
-            <Text style={[styles.healthPct, { color: stateColor }]}>
-              {100 - careAssessment.score}%
+          <View style={styles.statusHeroTextCol}>
+            <Text style={styles.statusHeroTitle}>
+              {overdueTasks.length > 0
+                ? 'Maintenance overdue'
+                : soonTasks.length > 0
+                ? 'Maintenance coming up'
+                : "You're all caught up!"}
+            </Text>
+            <Text style={styles.statusHeroSub}>
+              {overdueTasks.length > 0
+                ? `${overdueTasks[0].title} is ${overdueTasks[0].dueText.toLowerCase()}.`
+                : soonTasks.length > 0
+                ? `${soonTasks[0].title} is ${soonTasks[0].dueText.toLowerCase()}.`
+                : `Your next maintenance task is ${nextTask?.title.toLowerCase()} (${nextTask?.dueText.toLowerCase()}).`}
             </Text>
           </View>
-          <ProgressBar value={100 - careAssessment.score} color={stateColor} height={7} />
-          <View style={styles.progressLabels}>
-            <Text style={styles.progressText}>Clean & Optimal</Text>
-            <Text style={styles.progressText}>Needs Wash</Text>
-          </View>
         </View>
 
-        {careAssessment.weatherExplained && (
-          <InfoNote
-            text="☁️ Current cloud cover / monsoon weather explains part of the generation drop. Alert suppressed per PRD §8.3."
-            color={COLORS.info}
-            style={{ marginTop: SPACING.md }}
-          />
+        {/* ── Separate Generation Alert (Shown ONLY when attention needed) ── */}
+        {careAssessment.state.includes('recommended') && !careAssessment.weatherExplained && (
+          <View style={styles.generationAlert}>
+            <View style={styles.generationAlertHeader}>
+              <Ionicons name="flash-outline" size={15} color={COLORS.danger} />
+              <Text style={styles.generationAlertTitle}>Generation Dip Detected</Text>
+            </View>
+            <Text style={styles.generationAlertText}>
+              Your daily solar output dropped below seasonal expected averages in Goa. A panel wash or inverter check will help recover full generation.
+            </Text>
+          </View>
         )}
       </Card>
 
-      {/* ── 2. Diagnostic Signals ── */}
-      <Card
-        title="Scoring Signals"
-        subtitle="Transparent heuristic model (PRD §8.3)"
-        style={styles.cardSpacing}
-      >
-        <View style={styles.signalsContainer}>
-          <SignalItem
-            icon="calendar-outline"
-            label="Recency Signal"
-            weight="20%"
-            value={careAssessment.signals.cleanlinessRecencySignal}
-            detail={`${careAssessment.daysSinceLastClean} days since last confirmed wash`}
-          />
-          <SignalItem
-            icon="rainy-outline"
-            label="Natural Rain Washing"
-            weight="25%"
-            value={careAssessment.signals.rainFreeSignal}
-            detail="Monsoon rains provide natural washing. Dry season accumulates dust."
-          />
-          <SignalItem
-            icon="pulse-outline"
-            label="Generation Deviation"
-            weight="40%"
-            value={careAssessment.signals.generationDeviationSignal}
-            detail="Normalized kWh/kW/day vs expected seasonal benchmark."
-          />
-          <SignalItem
-            icon="partly-sunny-outline"
-            label="Weather Confidence"
-            weight="15%"
-            value={careAssessment.signals.weatherConfidenceSignal}
-            detail="Sunshine hours and cloud cover data availability."
-          />
-        </View>
-      </Card>
+      {/* ── Section Title: Your Maintenance Checklist ── */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Your maintenance</Text>
+        <Text style={styles.sectionBadge}>
+          {overdueTasks.length > 0
+            ? `${overdueTasks.length} overdue`
+            : `${tasksWithSchedule.length} upcoming`}
+        </Text>
+      </View>
 
-      {/* ── 3. Goa Climate & Coastal Advisory ── */}
-      <Card title="Goa Climate Advisory" style={styles.cardSpacing}>
-        <View style={styles.advisoryContainer}>
-          <View style={styles.advisoryCard}>
-            <View style={styles.advisoryHeader}>
-              <View style={[styles.advisoryIconBox, { backgroundColor: '#E0F2FE' }]}>
-                <Ionicons name="rainy" size={14} color="#0284C7" />
-              </View>
-              <Text style={styles.advisoryTitle}>Monsoon Season (June–Sept)</Text>
-            </View>
-            <Text style={styles.advisoryText}>
-              Heavy Goa showers naturally rinse rooftop panels. Routine cleaning is typically not needed, and soiling alerts are automatically suppressed.
-            </Text>
-          </View>
+      {/* ── Task Cards (Simple, clear, 3-4 tasks) ── */}
+      <View style={styles.taskList}>
+        {tasksWithSchedule.map((task) => {
+          const isOverdue = task.dueSeverity === 'overdue';
+          const isSoon = task.dueSeverity === 'soon';
 
-          <View style={styles.advisoryCard}>
-            <View style={styles.advisoryHeader}>
-              <View style={[styles.advisoryIconBox, { backgroundColor: '#FEF3C7' }]}>
-                <Ionicons name="sunny" size={14} color="#D97706" />
-              </View>
-              <Text style={styles.advisoryTitle}>Dry Coastal Season (Oct–May)</Text>
-            </View>
-            <Text style={styles.advisoryText}>
-              Red laterite road dust and coastal salt film accumulate rapidly. Rinse panels every 20–30 days before 8 AM using soft water and a squeegee.
-            </Text>
-          </View>
-        </View>
-      </Card>
-
-      {/* ── 4. Maintenance Log ── */}
-      <Card
-        title="Maintenance Log"
-        subtitle={`${cleaningEvents.length} event${cleaningEvents.length === 1 ? '' : 's'} recorded`}
-        style={styles.cardSpacing}
-      >
-        {cleaningEvents.length === 0 ? (
-          <Text style={styles.emptyLog}>No cleaning events logged yet. Tap &apos;Log Wash&apos; to add one.</Text>
-        ) : (
-          <View style={styles.logList}>
-            {cleaningEvents.map((evt) => (
-              <View key={evt.id} style={styles.logItem}>
-                <View style={styles.logTop}>
-                  <View style={styles.logLeft}>
-                    <Ionicons
-                      name={evt.skipped ? 'close-circle-outline' : 'water'}
-                      size={14}
-                      color={evt.skipped ? COLORS.textMuted : COLORS.info}
-                    />
-                    <Text style={styles.logDate}>{evt.date}</Text>
-                    {evt.skipped && <Text style={styles.skippedTag}>Skipped</Text>}
-                  </View>
-                  <Text style={styles.logProvider}>{evt.provider ?? 'Self-cleaned'}</Text>
+          return (
+            <View key={task.id} style={styles.taskCard}>
+              <View style={styles.taskTopRow}>
+                <View style={[styles.taskIconBox, { backgroundColor: task.iconBg }]}>
+                  <Ionicons name={task.icon} size={20} color={task.iconColor} />
                 </View>
-                {evt.notes ? <Text style={styles.logNotes}>{evt.notes}</Text> : null}
-                {evt.cost ? <Text style={styles.logCost}>Cost: ₹{evt.cost}</Text> : null}
+
+                <View style={styles.taskInfoCol}>
+                  <Text style={styles.taskTitle}>{task.title}</Text>
+                  <Text style={styles.taskDesc}>{task.description}</Text>
+
+                  <View style={styles.dueBadgeRow}>
+                    <Ionicons
+                      name={isOverdue ? 'alert-circle' : isSoon ? 'time-outline' : 'calendar-outline'}
+                      size={13}
+                      color={
+                        isOverdue
+                          ? COLORS.danger
+                          : isSoon
+                          ? '#D97706'
+                          : COLORS.textMuted
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.dueText,
+                        isOverdue
+                          ? styles.dueTextOverdue
+                          : isSoon
+                          ? styles.dueTextSoon
+                          : styles.dueTextNormal,
+                      ]}
+                    >
+                      {task.dueText}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.taskChevronBox}>
+                  <Ionicons name="chevron-forward" size={18} color={COLORS.border} />
+                </View>
               </View>
-            ))}
+
+              {/* Action Button: 1-Tap Complete */}
+              <TouchableOpacity
+                id={`btn-complete-${task.id}`}
+                style={styles.completeBtn}
+                onPress={() => handleOpenCompleteModal(task)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="checkmark" size={16} color={COLORS.text} />
+                <Text style={styles.completeBtnText}>Mark as completed</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* ── Recently Completed (Collapsible History) ── */}
+      <View style={styles.recentSection}>
+        <TouchableOpacity
+          id="btn-toggle-recent-history"
+          style={[styles.recentCard, isHistoryExpanded && styles.recentCardExpanded]}
+          onPress={() => setIsHistoryExpanded(!isHistoryExpanded)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.recentIconBox}>
+            <Ionicons name="time-outline" size={20} color={COLORS.textSub} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.recentTitle}>Recently completed</Text>
+            <Text style={styles.recentSub}>
+              {mostRecentEvent
+                ? `${mostRecentEvent.provider || 'Panel cleaning'} · ${formatFriendlyDate(mostRecentEvent.date)}`
+                : 'No completed tasks recorded yet'}
+            </Text>
+          </View>
+          <Ionicons
+            name={isHistoryExpanded ? 'chevron-up' : 'chevron-forward'}
+            size={18}
+            color={COLORS.textMuted}
+          />
+        </TouchableOpacity>
+
+        {/* Expanded History List */}
+        {isHistoryExpanded && (
+          <View style={styles.historyDropdown}>
+            {cleaningEvents.length === 0 ? (
+              <Text style={styles.emptyHistoryText}>No maintenance logs found.</Text>
+            ) : (
+              cleaningEvents.map((evt) => (
+                <View key={evt.id} style={styles.historyRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyProvider}>
+                      {evt.provider || 'Panel Wash'}
+                    </Text>
+                    <Text style={styles.historyDate}>
+                      {evt.date} {evt.notes ? `· ${evt.notes}` : ''}
+                    </Text>
+                  </View>
+
+                  {onDeleteClean && (
+                    <TouchableOpacity
+                      onPress={() => confirmDelete(evt)}
+                      style={styles.deleteHistoryBtn}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="trash-outline" size={15} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))
+            )}
           </View>
         )}
-      </Card>
+      </View>
+
+      {/* ── Quick Wash Details Option ── */}
+      <TouchableOpacity
+        id="btn-open-detailed-clean"
+        style={styles.secondaryWashLink}
+        onPress={onLogClean}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="add-circle-outline" size={16} color={COLORS.gold} />
+        <Text style={styles.secondaryWashLinkText}>
+          Add wash with cost / service provider details
+        </Text>
+      </TouchableOpacity>
+
+      {/* ── Quick Completion Bottom Sheet Modal ── */}
+      <Modal
+        visible={!!completingTask}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCompletingTask(null)}
+      >
+        <KeyboardAvoidingView style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalSheet,
+              { paddingBottom: Math.max(insets.bottom, 16) + 12 },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Mark Completed</Text>
+                <Text style={styles.modalSub}>{completingTask?.title}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setCompletingTask(null)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={22} color={COLORS.textSub} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick 1-tap today button */}
+            <TouchableOpacity
+              style={[
+                styles.todayQuickBtn,
+                completionDate === todayYMD && styles.todayQuickBtnActive,
+              ]}
+              onPress={() => setCompletionDate(todayYMD)}
+            >
+              <Ionicons
+                name={completionDate === todayYMD ? 'checkmark-circle' : 'ellipse-outline'}
+                size={18}
+                color={completionDate === todayYMD ? COLORS.success : COLORS.textMuted}
+              />
+              <Text style={styles.todayQuickText}>Completed Today ({formatFriendlyDate(todayYMD)})</Text>
+            </TouchableOpacity>
+
+            {/* Or custom date */}
+            <View style={{ marginTop: SPACING.sm }}>
+              <DateField
+                label="Or choose actual completion date"
+                value={completionDate}
+                onChange={setCompletionDate}
+                placeholder={todayYMD}
+              />
+            </View>
+
+            {/* Optional note */}
+            <View style={styles.noteFieldGroup}>
+              <Text style={styles.noteLabel}>Optional note</Text>
+              <TextInput
+                style={styles.noteInput}
+                value={completionNotes}
+                onChangeText={setCompletionNotes}
+                placeholder="e.g. Cleaned with hose / Checked inverter lights"
+                placeholderTextColor={COLORS.textMuted}
+              />
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.modalFooterBtns}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setCompletingTask(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, isSubmitting && { opacity: 0.65 }]}
+                onPress={handleConfirmCompletion}
+                disabled={isSubmitting}
+              >
+                <Ionicons name="checkmark-done" size={16} color={COLORS.textInverse} />
+                <Text style={styles.modalSaveText}>
+                  {isSubmitting ? 'Saving…' : 'Save & Reschedule'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 };
-
-const SignalItem: React.FC<{
-  icon: string;
-  label: string;
-  weight: string;
-  value: number;
-  detail: string;
-}> = ({ icon, label, weight, value, detail }) => (
-  <View style={styles.signalCard}>
-    <View style={styles.signalIconBox}>
-      <Ionicons name={icon as any} size={16} color={COLORS.textSub} />
-    </View>
-    <View style={styles.signalContent}>
-      <View style={styles.signalHeader}>
-        <Text style={styles.signalLabel}>{label}</Text>
-        <View style={styles.signalPill}>
-          <Text style={styles.signalScore}>{Math.round(value)}/100</Text>
-        </View>
-      </View>
-      <Text style={styles.signalWeight}>Weight: {weight}</Text>
-      <Text style={styles.signalDetail}>{detail}</Text>
-    </View>
-  </View>
-);
 
 const styles = StyleSheet.create({
   container: {
@@ -265,266 +600,406 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   content: {
-    padding: SPACING.md,
-    paddingBottom: SPACING.xxl + 24,
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.xxl + 32,
   },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-    paddingHorizontal: 2,
-  },
-  pageTitle: {
-    fontSize: 22,
-    fontWeight: FONT.heavy,
-    color: COLORS.text,
-  },
-  pageSub: {
-    fontSize: 12,
-    color: COLORS.textSub,
-    marginTop: 2,
-  },
-  cardSpacing: {
+
+  // Solar Care Hero Card
+  heroCard: {
     marginBottom: SPACING.lg,
   },
-  logBtn: {
+  bellBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.borderSubtle,
+  },
+  bellBtnActive: {
+    borderColor: `${COLORS.gold}55`,
+    backgroundColor: COLORS.glowGold,
+  },
+
+  // Status Hero Callout (Inside Card)
+  statusHero: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: COLORS.gold,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: RADIUS.full,
-  },
-  logBtnText: {
-    fontSize: 12,
-    fontWeight: FONT.bold,
-    color: COLORS.textInverse,
-  },
-
-  // State Badge
-  stateBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
+    padding: SPACING.md - 2,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-  },
-  stateBadgeText: {
-    fontSize: 11,
-    fontWeight: FONT.bold,
-  },
-
-  // Hero Row
-  heroRow: {
-    flexDirection: 'row',
     gap: 12,
-    alignItems: 'flex-start',
   },
-  statusIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
+  statusHeroCaughtUp: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  statusHeroSoon: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  statusHeroOverdue: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  statusHeroIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  heroTextCol: {
+  statusHeroTextCol: {
     flex: 1,
   },
-  rationaleText: {
-    fontSize: 13,
+  statusHeroTitle: {
+    fontSize: 15,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
+  statusHeroSub: {
+    fontSize: 12.5,
     color: COLORS.textSub,
-    lineHeight: 18,
-  },
-  recommendationText: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    fontStyle: 'italic',
-    marginTop: 4,
-    lineHeight: 16,
+    marginTop: 2,
+    lineHeight: 17,
   },
 
-  // Health container
-  healthContainer: {
-    marginTop: SPACING.md,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.borderSubtle,
+  // Generation Alert
+  generationAlert: {
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    borderRadius: RADIUS.md,
+    padding: SPACING.md - 2,
+    marginTop: SPACING.sm,
   },
-  healthLabelRow: {
+  generationAlertHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    gap: 6,
+    marginBottom: 4,
   },
-  healthLabel: {
-    fontSize: 12,
-    fontWeight: FONT.semi,
-    color: COLORS.text,
-  },
-  healthPct: {
+  generationAlertTitle: {
     fontSize: 13,
-    fontWeight: FONT.heavy,
-  },
-  progressLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  progressText: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-  },
-
-  // Scoring Signals
-  signalsContainer: {
-    gap: SPACING.sm,
-  },
-  signalCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-    padding: SPACING.sm + 2,
-  },
-  signalIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  signalContent: {
-    flex: 1,
-  },
-  signalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  signalLabel: {
-    fontSize: 12,
     fontWeight: FONT.bold,
-    color: COLORS.text,
-    flex: 1,
+    color: COLORS.danger,
   },
-  signalPill: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: RADIUS.full,
-  },
-  signalScore: {
-    fontSize: 10,
-    fontWeight: FONT.bold,
-    color: COLORS.textSub,
-  },
-  signalWeight: {
-    fontSize: 10,
-    fontWeight: FONT.semi,
-    color: '#D97706',
-    marginTop: 2,
-  },
-  signalDetail: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    lineHeight: 15,
-    marginTop: 2,
-  },
-
-  // Climate Advisory
-  advisoryContainer: {
-    gap: SPACING.sm,
-  },
-  advisoryCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-    padding: SPACING.md,
-  },
-  advisoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  advisoryIconBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  advisoryTitle: {
-    fontSize: 12,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
-  },
-  advisoryText: {
+  generationAlertText: {
     fontSize: 12,
     color: COLORS.textSub,
     lineHeight: 17,
   },
 
-  // Maintenance Log
-  logList: {
-    gap: SPACING.sm,
-  },
-  emptyLog: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    paddingVertical: SPACING.md,
-  },
-  logItem: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-    padding: SPACING.sm + 2,
-    gap: 4,
-  },
-  logTop: {
+  // Section Header
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: SPACING.sm + 4,
+    paddingHorizontal: 2,
   },
-  logLeft: {
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: FONT.heavy,
+    color: COLORS.text,
+    letterSpacing: -0.2,
+  },
+  sectionBadge: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.textMuted,
+  },
+
+  // Task Cards
+  taskList: {
+    gap: 14,
+    marginBottom: SPACING.lg,
+  },
+  taskCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW.card,
+  },
+  taskTopRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  taskIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  taskInfoCol: {
+    flex: 1,
+  },
+  taskTitle: {
+    fontSize: 15,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+    lineHeight: 20,
+    letterSpacing: -0.2,
+  },
+  taskDesc: {
+    fontSize: 12.5,
+    color: COLORS.textSub,
+    marginTop: 2,
+    lineHeight: 17,
+  },
+  dueBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
+    marginTop: 6,
   },
-  logDate: {
+  dueText: {
     fontSize: 12,
+    fontWeight: FONT.semi,
+    lineHeight: 16,
+  },
+  dueTextOverdue: {
+    color: COLORS.danger,
+  },
+  dueTextSoon: {
+    color: '#D97706',
+  },
+  dueTextNormal: {
+    color: COLORS.textMuted,
+  },
+  taskChevronBox: {
+    paddingTop: 2,
+    paddingLeft: 4,
+  },
+
+  // Complete Button
+  completeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 11,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  completeBtnText: {
+    fontSize: 13,
     fontWeight: FONT.bold,
     color: COLORS.text,
   },
-  skippedTag: {
-    fontSize: 10,
+
+  // Recently Completed Section
+  recentSection: {
+    marginBottom: SPACING.md,
+  },
+  recentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW.card,
+  },
+  recentCardExpanded: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderBottomColor: COLORS.borderSubtle,
+  },
+  recentIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recentTitle: {
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+  recentSub: {
+    fontSize: 12,
+    color: COLORS.textSub,
+    marginTop: 2,
+  },
+
+  // Expanded History Dropdown
+  historyDropdown: {
+    backgroundColor: COLORS.surface,
+    borderBottomLeftRadius: RADIUS.lg,
+    borderBottomRightRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    gap: 0,
+  },
+  emptyHistoryText: {
+    fontSize: 12,
     color: COLORS.textMuted,
-    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 12,
   },
-  logProvider: {
-    fontSize: 11,
-    color: COLORS.info,
+  historyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderSubtle,
+  },
+  historyProvider: {
+    fontSize: 13,
     fontWeight: FONT.semi,
+    color: COLORS.text,
   },
-  logNotes: {
+  historyDate: {
     fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  deleteHistoryBtn: {
+    padding: 6,
+  },
+
+  // Secondary detailed wash link
+  secondaryWashLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+  },
+  secondaryWashLinkText: {
+    fontSize: 12.5,
+    fontWeight: FONT.semi,
+    color: COLORS.gold,
+  },
+
+  // Completion Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md + 2,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: FONT.heavy,
+    color: COLORS.text,
+  },
+  modalSub: {
+    fontSize: 13,
+    color: COLORS.gold,
+    fontWeight: FONT.semi,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+
+  todayQuickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  todayQuickBtnActive: {
+    borderColor: COLORS.success,
+    backgroundColor: '#ECFDF5',
+  },
+  todayQuickText: {
+    fontSize: 13,
+    fontWeight: FONT.bold,
+    color: COLORS.text,
+  },
+
+  noteFieldGroup: {
+    marginTop: SPACING.sm + 4,
+    marginBottom: SPACING.md,
+  },
+  noteLabel: {
+    fontSize: 11.5,
+    fontWeight: FONT.semi,
+    color: COLORS.textSub,
+    marginBottom: 6,
+  },
+  noteInput: {
+    backgroundColor: COLORS.surfaceRaised,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: COLORS.text,
+  },
+
+  modalFooterBtns: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm + 2,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    alignItems: 'center',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: FONT.semi,
     color: COLORS.textSub,
   },
-  logCost: {
-    fontSize: 10,
-    color: COLORS.textMuted,
+  modalSaveBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.gold,
+    paddingVertical: 13,
+    borderRadius: RADIUS.md,
+  },
+  modalSaveText: {
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: COLORS.textInverse,
   },
 });

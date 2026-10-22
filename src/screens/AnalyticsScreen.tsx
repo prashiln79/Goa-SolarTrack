@@ -25,6 +25,7 @@ import {
 import { analyzeIntelligentPerformance } from '../domain/intelligentAnalysis';
 import { saveSystemProfile } from '../services/solarStorage';
 import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface AnalyticsScreenProps {
   bills: SolarBill[];
@@ -41,6 +42,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
   careAssessment,
   onProfileSave,
 }) => {
+  const insets = useSafeAreaInsets();
   const monthlyRows = useMemo(
     () => buildMonthlyAnalytics(bills, profile.capacityKw),
     [bills, profile.capacityKw]
@@ -843,7 +845,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
       )}
 
       {/* ── Edit Investment Modal ── */}
-      <Modal visible={showEditCost} animationType="slide" transparent>
+      <Modal visible={showEditCost} animationType="slide" transparent onRequestClose={() => setShowEditCost(false)}>
         <KeyboardAvoidingView style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
@@ -873,7 +875,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
               />
             </View>
 
-            <View style={styles.sheetFooter}>
+            <View style={[styles.sheetFooter, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
               <TouchableOpacity
                 id="btn-cancel-cost"
                 style={styles.cancelBtn}
@@ -1264,10 +1266,10 @@ const styles = StyleSheet.create({
   sheetFooter: {
     flexDirection: 'row',
     gap: SPACING.sm,
-    padding: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    paddingBottom: SPACING.lg,
   },
   cancelBtn: {
     flex: 1,

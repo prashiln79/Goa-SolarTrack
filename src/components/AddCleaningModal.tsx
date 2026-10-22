@@ -53,7 +53,7 @@ export const AddCleaningModal: React.FC<AddCleaningModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}>

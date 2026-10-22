@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT } from '../../constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface DatePickerModalProps {
   visible: boolean;
@@ -51,6 +52,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
   onClose,
   title = 'Select Date',
 }) => {
+  const insets = useSafeAreaInsets();
   const parsed = useMemo(() => parseYMD(value), [value]);
 
   const [currentYear, setCurrentYear] = useState(parsed.year);
@@ -133,7 +135,16 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
+      <Pressable
+        style={[
+          styles.overlay,
+          {
+            paddingTop: Math.max(insets.top, SPACING.md),
+            paddingBottom: Math.max(insets.bottom, SPACING.md),
+          },
+        ]}
+        onPress={onClose}
+      >
         <Pressable style={styles.dialog} onPress={(e) => e.stopPropagation()}>
           {/* Header */}
           <View style={styles.dialogHeader}>

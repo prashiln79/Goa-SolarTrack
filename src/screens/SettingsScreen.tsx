@@ -13,6 +13,7 @@ import { testFirestoreConnection, seedCanonicalData } from '../services/solarSto
 import { runCanonicalVerification } from '../domain/energyAccounting';
 import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
 import { DateField } from '../components/ui/DatePickerModal';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface SettingsScreenProps {
   profile: SystemProfile;
@@ -25,6 +26,7 @@ interface SettingsScreenProps {
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   profile, syncStatus, onProfileSave, onDataRefresh, onSwitchConsumer,
 }) => {
+  const insets = useSafeAreaInsets();
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [isTestingConn, setIsTestingConn]     = useState(false);
   const [isSyncing, setIsSyncing]             = useState(false);
@@ -50,6 +52,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setSettlementRate(profile.settlementRateInr ? String(profile.settlementRateInr) : '3.50');
     setSystemCost(profile.systemCostInr ? String(profile.systemCostInr) : '');
   };
+
+  React.useEffect(() => {
+    if (!showEditProfile) {
+      populateFieldsFromProfile();
+    }
+  }, [profile, showEditProfile]);
 
   const handleOpenEditProfile = () => {
     populateFieldsFromProfile();
@@ -155,9 +163,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       await onProfileSave(updated);
       setIsSavingProfile(false);
       setShowEditProfile(false);
+      Alert.alert('Saved to Cloud', 'Your solar system profile has been saved and synced with Firebase.');
     } catch (e: any) {
       setIsSavingProfile(false);
-      Alert.alert('Error', e?.message ?? 'Save failed');
+      Alert.alert('Save Failed', e?.message ?? 'Could not save profile.');
     }
   };
 
@@ -210,7 +219,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         }
       >
         <LedgerRow label="System Name" value={profile.systemName} />
-        <LedgerRow label="DC Capacity" value={`${profile.capacityKw} kW`} />
+        <LedgerRow label="Solar System Capacity" value={`${profile.capacityKw} kW`} />
         <LedgerRow label="Location" value={profile.location} />
         <LedgerRow label="Tariff Category" value={profile.tariffCategory} />
         <LedgerRow label="Installation Date" value={profile.installationDate} />
@@ -354,7 +363,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       </Card>
 
       {/* ── Edit Profile Modal ── */}
-      <Modal visible={showEditProfile} animationType="slide" transparent>
+      <Modal visible={showEditProfile} animationType="slide" transparent onRequestClose={() => setShowEditProfile(false)}>
         <KeyboardAvoidingView style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
@@ -378,7 +387,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 style={{ marginBottom: SPACING.md }}
               />
             </ScrollView>
-            <View style={styles.sheetFooter}>
+            <View style={[styles.sheetFooter, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
               <TouchableOpacity id="btn-cancel-profile" style={styles.cancelBtn} onPress={() => setShowEditProfile(false)}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
@@ -467,9 +476,10 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { fontSize: 18, fontWeight: FONT.bold, color: COLORS.text },
   sheetFooter: {
-    flexDirection: 'row', gap: SPACING.sm, padding: SPACING.lg,
+    flexDirection: 'row', gap: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: 12,
     borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingBottom: SPACING.lg,
   },
   fieldLabel: { fontSize: 11, fontWeight: FONT.semi, color: COLORS.textSub, marginBottom: 4 },
   input: {
