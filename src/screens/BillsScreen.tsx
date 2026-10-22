@@ -1,9 +1,8 @@
 // ============================================================
-// Bills Screen — Compact History of Monthly Bills
-// PRD §3.2 / §13.1 monthly analytics
-// Clean, minimal, compact, and intuitive design
+// Bills Screen — Beautiful, Modern Monthly Electricity Bills
+// Matches reference mockup: Summary banner, Year filter & 3-column energy cards
 // ============================================================
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -30,9 +29,59 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
   onDeleteBill,
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedYear, setSelectedYear] = useState<string | null>(null);
+
+  // Extract unique years from bill periods
+  const availableYears = useMemo(() => {
+    const set = new Set<string>();
+    bills.forEach((b) => {
+      // Period is either "August 2026", "Aug 2026", or "2026-08"
+      const match = b.period.match(/\b(20\d\d)\b/);
+      if (match) {
+        set.add(match[1]);
+      } else if (b.periodStart) {
+        const startYear = b.periodStart.slice(0, 4);
+        if (startYear.startsWith('20')) set.add(startYear);
+      }
+    });
+    return Array.from(set).sort((a, b) => Number(b) - Number(a));
+  }, [bills]);
+
+  // Current filtered year (default to latest year available)
+  const activeYear = selectedYear || (availableYears.length > 0 ? availableYears[0] : null);
+
+  // Filter bills by active year
+  const filteredBills = useMemo(() => {
+    if (!activeYear || activeYear === 'All') return bills;
+    return bills.filter((b) => {
+      if (b.period.includes(activeYear)) return true;
+      if (b.periodStart && b.periodStart.startsWith(activeYear)) return true;
+      return false;
+    });
+  }, [bills, activeYear]);
+
+  // Summary figures
+  const latestBill = bills.length > 0 ? bills[0] : null;
+  const earliestBill = bills.length > 0 ? bills[bills.length - 1] : null;
+  const totalAmount = useMemo(() => {
+    return bills.reduce((sum, b) => sum + (b.billAmount || 0), 0);
+  }, [bills]);
+  const dateRangeText =
+    bills.length > 1 && earliestBill && latestBill
+      ? `${earliestBill.period} – ${latestBill.period}`
+      : latestBill
+      ? latestBill.period
+      : 'No bills yet';
 
   const toggle = (id: string) =>
     setExpandedId((prev) => (prev === id ? null : id));
+
+  const handleYearPress = () => {
+    if (availableYears.length <= 1) return;
+    const options = [...availableYears, 'All'];
+    const nextIdx = (options.indexOf(activeYear || 'All') + 1) % options.length;
+    setSelectedYear(options[nextIdx]);
+  };
 
   const confirmDelete = (bill: SolarBill) => {
     if (Platform.OS === 'web') {
@@ -70,110 +119,169 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Page Header ── */}
-      <View style={styles.topBar}>
-        <View>
-          <Text style={styles.pageTitle}>Monthly Bills</Text>
-          <Text style={styles.pageSub}>
-            {bills.length} billing cycle{bills.length === 1 ? '' : 's'} recorded
+      {/* ── Screen Header ── */}
+      {/* <View style={styles.headerRow}>
+        <View style={styles.headerIconBox}>
+          <Ionicons name="document-text" size={22} color="#EA580C" />
+        </View>
+        <View style={styles.headerTextCol}>
+          <Text style={styles.screenTitle}>Bills</Text>
+          <Text style={styles.screenSub}>Your monthly electricity bills</Text>
+        </View>
+      </View> */}
+
+      {/* ── Top Summary Banner Card ── */}
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryLeftCol}>
+          <View style={styles.summaryIconBox}>
+            <Ionicons name="stats-chart" size={22} color="#EA580C" />
+          </View>
+          <View style={styles.summaryTextCol}>
+            <Text style={styles.summaryTitle}>
+              {bills.length} bill{bills.length === 1 ? '' : 's'} recorded
+            </Text>
+            <Text style={styles.summarySub}>{dateRangeText}</Text>
+          </View>
+        </View>
+
+        <View style={styles.summaryDivider} />
+
+        <View style={styles.summaryRightCol}>
+          <Text style={styles.latestLabel}>Total amount</Text>
+          <Text style={styles.latestAmount}>
+            ₹{Math.round(totalAmount).toLocaleString('en-IN')}
+          </Text>
+          <Text style={styles.latestPeriod}>
+            {bills.length > 0 ? 'all bills' : '—'}
           </Text>
         </View>
       </View>
+
+      {/* ── Year Filter Row ── */}
+      {availableYears.length > 0 && (
+        <View style={styles.filterRow}>
+          <Text style={styles.filterLabel}>Year</Text>
+          <TouchableOpacity
+            id="btn-year-dropdown"
+            style={styles.yearDropdownBtn}
+            onPress={handleYearPress}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.yearDropdownText}>{activeYear || 'All'}</Text>
+            <Ionicons name="chevron-down" size={14} color="#64748B" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ── Empty State ── */}
       {bills.length === 0 && (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
-            <Ionicons name="document-text-outline" size={32} color={COLORS.gold} />
+            <Ionicons name="document-text-outline" size={32} color="#EA580C" />
           </View>
           <Text style={styles.emptyTitle}>No bills recorded yet</Text>
           <Text style={styles.emptySub}>
-            Tap &apos;New Bill&apos; or use the Add Bill button to enter your first monthly Goa electricity bill.
+            Use the &apos;+ Add Bill&apos; button in the header to enter your first monthly Goa electricity bill.
           </Text>
         </View>
       )}
 
-      {/* ── Compact Bills List ── */}
-      {bills.map((bill) => {
+      {/* ── Bill Cards List ── */}
+      {filteredBills.map((bill) => {
         const expanded = expandedId === bill.id;
         const readInterval =
           bill.periodStart && bill.periodEnd
             ? `${bill.periodStart} – ${bill.periodEnd}`
             : null;
 
+        const genFormatted =
+          bill.generationKwh !== null && bill.generationKwh !== undefined
+            ? `${bill.generationKwh}`
+            : '—';
+
         return (
           <TouchableOpacity
             key={bill.id}
             id={`btn-expand-bill-${bill.id}`}
-            activeOpacity={0.75}
+            activeOpacity={0.8}
             onPress={() => toggle(bill.id)}
             style={[styles.billCard, expanded && styles.billCardExpanded]}
           >
-            {/* ── Main Row: Period + Days/Due & Amount Badge + Chevron ── */}
-            <View style={styles.billHeaderRow}>
+            {/* Top Row: Calendar Icon, Period, Read Interval & Amount Pill */}
+            <View style={styles.billTopRow}>
+              <View style={styles.calIconBox}>
+                <Ionicons name="calendar-outline" size={18} color="#2563EB" />
+              </View>
+
               <View style={styles.billTitleCol}>
-                <View style={styles.billTitleRow}>
-                  <Text style={styles.billPeriod}>{bill.period}</Text>
+                <View style={styles.titleWithBadge}>
+                  <Text style={styles.billPeriodTitle}>{bill.period}</Text>
                   {bill.needsReview && (
                     <View style={styles.warningPill}>
                       <Ionicons name="alert-circle" size={12} color={COLORS.danger} />
                     </View>
                   )}
                 </View>
-                <Text style={styles.billMeta} numberOfLines={1}>
+                <Text style={styles.billDatesSubtitle} numberOfLines={1}>
                   {readInterval
                     ? `${readInterval} (${bill.billingDays || 30}d)`
-                    : `Bill #${bill.billNumber ?? 'N/A'} · Due: ${bill.dueDate ?? '—'}`}
+                    : `Due: ${bill.dueDate || '—'}`}
                 </Text>
               </View>
 
-              <View style={styles.billHeaderRight}>
-                <View style={styles.billAmountBadge}>
-                  <Text style={styles.billAmountText}>₹{bill.billAmount.toFixed(0)}</Text>
-                </View>
+              <View style={styles.amountPill}>
+                <Text style={styles.amountPillText}>
+                  ₹{Math.round(bill.billAmount).toLocaleString('en-IN')}
+                </Text>
                 <Ionicons
                   name={expanded ? 'chevron-up' : 'chevron-down'}
-                  size={15}
-                  color={COLORS.textMuted}
-                  style={styles.chevronIcon}
+                  size={14}
+                  color="#64748B"
                 />
               </View>
             </View>
 
-            {/* ── Compact Key Stats Strip (Gen, Export, Banked) ── */}
-            <View style={styles.compactMetricsRow}>
-              <View style={styles.metricItem}>
-                <Text style={styles.metricLabel}>Gen</Text>
-                <Text style={[styles.metricVal, { color: '#D97706' }]}>
-                  {bill.generationKwh !== null && bill.generationKwh !== undefined
-                    ? bill.generationKwh
-                    : '—'}
-                  <Text style={styles.metricUnit}> kWh</Text>
-                </Text>
+            {/* 3-Column Metrics Strip: Solar gen, Export, Banked */}
+            <View style={styles.metricsStrip}>
+              {/* Col 1: Solar Generated */}
+              <View style={styles.metricCol}>
+                <View style={styles.metricValRow}>
+                  <Ionicons name="sunny-outline" size={17} color="#EA580C" style={styles.iconMargin} />
+                  <Text style={styles.metricValOrange}>
+                    {genFormatted} <Text style={styles.metricUnitOrange}>kWh</Text>
+                  </Text>
+                </View>
+                <Text style={styles.metricLabel}>Solar generated</Text>
               </View>
 
-              <View style={styles.metricDivider} />
-
-              <View style={styles.metricItem}>
-                <Text style={styles.metricLabel}>Export</Text>
-                <Text style={[styles.metricVal, { color: COLORS.text }]}>
-                  {bill.exportKwh}
-                  <Text style={styles.metricUnit}> kWh</Text>
-                </Text>
+              {/* Arrow */}
+              <View style={styles.arrowCol}>
+                <Ionicons name="swap-horizontal" size={18} color="#94A3B8" />
               </View>
 
-              <View style={styles.metricDivider} />
+              {/* Col 2: Exported to Grid */}
+              <View style={styles.metricCol}>
+                <View style={styles.metricValRow}>
+                  <Text style={styles.metricValDark}>
+                    {bill.exportKwh} <Text style={styles.metricUnitMuted}>kWh</Text>
+                  </Text>
+                </View>
+                <Text style={styles.metricLabel}>Exported to grid</Text>
+              </View>
 
-              <View style={styles.metricItem}>
-                <Text style={styles.metricLabel}>Banked</Text>
-                <Text style={[styles.metricVal, { color: '#059669' }]}>
-                  {bill.closingCreditKwh}
-                  <Text style={styles.metricUnit}> kWh</Text>
-                </Text>
+              {/* Col 3: Banked Units */}
+              <View style={styles.metricCol}>
+                <View style={styles.metricValRow}>
+                  <Ionicons name="business-outline" size={17} color="#16A34A" style={styles.iconMargin} />
+                  <Text style={styles.metricValGreen}>
+                    {bill.closingCreditKwh} <Text style={styles.metricUnitGreen}>kWh</Text>
+                  </Text>
+                </View>
+                <Text style={styles.metricLabel}>Banked units</Text>
               </View>
             </View>
 
-            {/* ── Expanded Detail Box ── */}
+            {/* ── Expanded Detail Drawer ── */}
             {expanded && (
               <View style={styles.expandedDrawer}>
                 <Text style={styles.expandedSection}>METER READING & INTERVAL</Text>
@@ -245,200 +353,341 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#F8FAFC',
   },
   content: {
-    padding: SPACING.md,
-    paddingBottom: SPACING.xxl + 24,
-  },
-  topBar: {
-    marginBottom: SPACING.sm + 2,
-    paddingHorizontal: 2,
-  },
-  pageTitle: {
-    fontSize: 20,
-    fontWeight: FONT.heavy,
-    color: COLORS.text,
-  },
-  pageSub: {
-    fontSize: 12,
-    color: COLORS.textSub,
-    marginTop: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
   },
 
-  // ── Compact Bill Card ──
+  // ── Header ──
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  headerIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTextCol: {
+    flex: 1,
+  },
+  screenTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  screenSub: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 2,
+  },
+
+  // ── Top Summary Banner Card ──
+  summaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFDF9',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 16,
+    ...SHADOW.card,
+  },
+  summaryLeftCol: {
+    flex: 1.4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  summaryIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#FFF7ED',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  summaryTextCol: {
+    flex: 1,
+  },
+  summaryTitle: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  summarySub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  summaryDivider: {
+    width: 1,
+    height: 38,
+    backgroundColor: '#F1F5F9',
+    marginHorizontal: 12,
+  },
+  summaryRightCol: {
+    flex: 0.9,
+    alignItems: 'flex-end',
+  },
+  latestLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '500',
+    textAlign: 'right',
+  },
+  latestAmount: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 1,
+    letterSpacing: -0.3,
+    textAlign: 'right',
+  },
+  latestPeriod: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
+    textAlign: 'right',
+  },
+
+  // ── Year Filter Row ──
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginBottom: 14,
+    paddingHorizontal: 2,
+  },
+  filterLabel: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  yearDropdownBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  yearDropdownText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+
+  // ── Bill Card ──
   billCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: RADIUS.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-    marginBottom: SPACING.sm,
+    padding: 14,
+    marginBottom: 12,
+    ...SHADOW.card,
   },
   billCardExpanded: {
     borderColor: '#CBD5E1',
   },
-  billHeaderRow: {
+  billTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+  },
+  calIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   billTitleCol: {
     flex: 1,
-    marginRight: SPACING.sm,
+    marginLeft: 10,
+    paddingRight: 6,
   },
-  billTitleRow: {
+  titleWithBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  billPeriod: {
-    fontSize: 14,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
+  billPeriodTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.2,
   },
   warningPill: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 2,
   },
-  billMeta: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    marginTop: 1,
+  billDatesSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
   },
-  billHeaderRight: {
+  amountPill: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  billAmountBadge: {
+    gap: 6,
     backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: RADIUS.sm,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  billAmountText: {
-    fontSize: 12,
-    fontWeight: FONT.heavy,
-    color: COLORS.text,
-  },
-  chevronIcon: {
-    marginLeft: 6,
+  amountPillText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
   },
 
-  // ── Compact Key Metrics Strip ──
-  compactMetricsRow: {
+  // ── Metrics Strip (3 Columns) ──
+  metricsStrip: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.sm,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    marginTop: 8,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 12,
   },
-  metricItem: {
+  metricCol: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'baseline',
+  },
+  arrowCol: {
+    paddingHorizontal: 4,
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+  },
+  metricValRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconMargin: {
+    marginRight: 4,
+  },
+  metricValOrange: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#EA580C',
+  },
+  metricUnitOrange: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#EA580C',
+  },
+  metricValDark: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  metricUnitMuted: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: '#64748B',
+  },
+  metricValGreen: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#16A34A',
+  },
+  metricUnitGreen: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#16A34A',
   },
   metricLabel: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    fontWeight: FONT.medium,
-    textTransform: 'uppercase',
-  },
-  metricVal: {
-    fontSize: 12,
-    fontWeight: FONT.bold,
-  },
-  metricUnit: {
-    fontSize: 10,
-    fontWeight: FONT.regular,
-    color: COLORS.textMuted,
-  },
-  metricDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: '#E2E8F0',
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
   },
 
   // ── Expanded Drawer ──
   expandedDrawer: {
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.xs + 2,
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#EEF2F6',
+    borderTopColor: '#F1F5F9',
   },
   expandedSection: {
     fontSize: 10,
-    fontWeight: FONT.heavy,
+    fontWeight: FONT.bold,
     color: COLORS.textMuted,
     letterSpacing: 0.5,
-    marginBottom: 2,
-    marginTop: 6,
+    marginBottom: SPACING.xs,
+    marginTop: SPACING.xs,
   },
   noteText: {
-    fontSize: 11,
+    fontSize: 12,
     color: COLORS.textSub,
     fontStyle: 'italic',
-    marginTop: SPACING.xs + 2,
+    marginTop: SPACING.xs,
   },
   deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    paddingVertical: 7,
-    marginTop: SPACING.sm,
-    borderTopWidth: 1,
-    borderTopColor: '#EEF2F6',
+    marginTop: SPACING.md,
+    paddingVertical: 9,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
   },
   deleteBtnText: {
-    fontSize: 11,
-    color: COLORS.danger,
+    fontSize: 12,
     fontWeight: FONT.semi,
+    color: COLORS.danger,
   },
 
   // ── Empty State ──
   emptyState: {
-    backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: SPACING.xl,
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginTop: SPACING.lg,
-    ...SHADOW.card,
-  },
-  emptyIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FEF3C7',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+    paddingVertical: SPACING.xxl,
+    paddingHorizontal: SPACING.lg,
+  },
+  emptyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FFF7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: FONT.bold,
     color: COLORS.text,
+    marginBottom: SPACING.xs,
   },
   emptySub: {
-    fontSize: 12,
+    fontSize: 13,
     color: COLORS.textSub,
     textAlign: 'center',
-    lineHeight: 17,
+    lineHeight: 18,
   },
 });

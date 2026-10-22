@@ -15,6 +15,9 @@ interface AppHeaderProps {
   onAddBill: () => void;
   onSettingsPress: () => void;
   onConsumerPress?: () => void;
+  onNotificationPress?: () => void;
+  hasNotificationDot?: boolean;
+  remindersEnabled?: boolean;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -23,6 +26,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onAddBill,
   onSettingsPress,
   onConsumerPress,
+  onNotificationPress,
+  hasNotificationDot = true,
+  remindersEnabled = true,
 }) => (
   <View style={styles.container}>
     <View style={styles.topRow}>
@@ -67,6 +73,21 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         >
           <Ionicons name="add" size={18} color={COLORS.textInverse} />
           <Text style={styles.addBtnText}>Add Bill</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          id="btn-header-notifications"
+          style={styles.bellBtn}
+          onPress={onNotificationPress || onSettingsPress}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={remindersEnabled === false ? 'notifications-off-outline' : 'notifications-outline'}
+            size={24}
+            color={remindersEnabled === false ? '#94A3B8' : '#334155'}
+          />
+          {hasNotificationDot && remindersEnabled !== false && (
+            <View style={styles.notificationDot} />
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -139,5 +160,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: FONT.bold,
     color: COLORS.textInverse,
+  },
+  bellBtn: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+    marginLeft: 2,
+  },
+  notificationDot: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EA580C',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
 });

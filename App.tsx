@@ -56,6 +56,13 @@ import {
   SyncStatus,
 } from './src/services/solarStorage';
 import { calculateCleaningScore } from './src/domain/cleaningIntelligence';
+import {
+  getRemindersEnabledAsync,
+  setRemindersEnabledAsync,
+  requestNotificationPermissionAsync,
+  sendInstantTestNotificationAsync,
+  cancelAllCareNotificationsAsync,
+} from './src/services/notificationService';
 
 // ── Types ─────────────────────────────────────────────────────
 import {
@@ -105,6 +112,7 @@ function MainApp() {
     isFirestoreConnected: false, lastSyncedAt: null, message: 'Connecting…',
   });
   const [isRefreshing, setIsRefreshing]               = useState(false);
+  const [remindersEnabled, setRemindersEnabled]       = useState(true);
 
   // ── Modal states ──
   const [isAddBillOpen, setIsAddBillOpen]             = useState(false);
@@ -151,6 +159,7 @@ function MainApp() {
 
     const bootstrap = async () => {
       try {
+        getRemindersEnabledAsync().then(setRemindersEnabled).catch(() => {});
         const savedConsumer = await loadStoredConsumerNumber();
         if (savedConsumer) {
           setConsumerNumber(savedConsumer);
@@ -300,6 +309,62 @@ function MainApp() {
     await loadAll();
   };
 
+  const handleNotificationPress = useCallback(async () => {
+    const isEnabled = await getRemindersEnabledAsync();
+    Alert.alert(
+      'Notifications 🔔',
+      isEnabled
+        ? 'Solar maintenance alerts are active. You will receive notifications when maintenance is due.'
+        : 'Solar maintenance alerts are currently stopped.',
+      [
+        {
+          text: 'Show notification',
+          onPress: async () => {
+            const granted = await requestNotificationPermissionAsync();
+            if (!granted) {
+              Alert.alert(
+                'Permission Required',
+                'Please grant notification permission for Goa SolarTrack in your Android system settings.'
+              );
+              return;
+            }
+            await sendInstantTestNotificationAsync();
+            Alert.alert(
+              'Notification Dispatched 🔔',
+              'A test notification has been sent to your Android notification tray.'
+            );
+          },
+        },
+        {
+          text: isEnabled ? 'Stop notifications' : 'Start notifications',
+          style: isEnabled ? 'destructive' : 'default',
+          onPress: async () => {
+            if (isEnabled) {
+              await setRemindersEnabledAsync(false);
+              setRemindersEnabled(false);
+              await cancelAllCareNotificationsAsync();
+              Alert.alert('Notifications Stopped', 'Solar maintenance notifications have been stopped.');
+            } else {
+              const granted = await requestNotificationPermissionAsync();
+              if (!granted) {
+                Alert.alert(
+                  'Permission Required',
+                  'Please grant notification permission for Goa SolarTrack in your Android system settings.'
+                );
+                return;
+              }
+              await setRemindersEnabledAsync(true);
+              setRemindersEnabled(true);
+              await sendInstantTestNotificationAsync();
+              Alert.alert('Notifications Started 🔔', 'Solar maintenance notifications are now active.');
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  }, []);
+
   // Safe-area insets
   const topInset = Math.max(insets.top, RNStatusBar.currentHeight ?? 0);
   const bottomInset = Math.max(insets.bottom, 16);
@@ -327,6 +392,8 @@ function MainApp() {
         onAddBill={() => setIsAddBillOpen(true)}
         onSettingsPress={() => setActiveTab('settings')}
         onConsumerPress={() => setIsConsumerModalOpen(true)}
+        onNotificationPress={handleNotificationPress}
+        remindersEnabled={remindersEnabled}
       />
 
       {/* Main content */}
@@ -369,6 +436,7 @@ function MainApp() {
             onLogClean={() => setIsAddCleanOpen(true)}
             onSaveClean={handleSaveCleaning}
             onDeleteClean={handleDeleteCleaning}
+            onNavigateSettings={() => setActiveTab('settings')}
           />
         )}
         {activeTab === 'settings' && (

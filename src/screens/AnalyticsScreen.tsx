@@ -1,6 +1,6 @@
 // ============================================================
-// Analytics Screen — Clean, Minimal, and Spacious Layout
-// Monthly analytics table + annual aggregate + Solar ROI & Payback
+// Analytics Screen — Clean, Modern & Human-Friendly Solar Analytics
+// Matches the visual reference: Investment recovery + System health child cards
 // ============================================================
 import React, { useState, useMemo } from 'react';
 import {
@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SolarBill, SystemProfile, CareAssessment } from '../types/solar';
-import { Card, Badge, Divider, InfoNote, ProgressBar } from '../components/ui/UIKit';
 import {
   buildMonthlyAnalytics,
   buildAnnualAnalytics,
@@ -24,7 +23,7 @@ import {
 } from '../domain/analytics';
 import { analyzeIntelligentPerformance } from '../domain/intelligentAnalysis';
 import { saveSystemProfile } from '../services/solarStorage';
-import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
+import { SHADOW } from '../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface AnalyticsScreenProps {
@@ -43,6 +42,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
   onProfileSave,
 }) => {
   const insets = useSafeAreaInsets();
+
   const monthlyRows = useMemo(
     () => buildMonthlyAnalytics(bills, profile.capacityKw),
     [bills, profile.capacityKw]
@@ -59,11 +59,44 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
     () => analyzeIntelligentPerformance(bills, profile, careAssessment),
     [bills, profile, careAssessment]
   );
+
   const latestBill = bills.length > 0 ? bills[0] : null;
 
+  // Expansion states for details
+  const [isBillDetailExpanded, setIsBillDetailExpanded] = useState(false);
+  const [isSolarDetailExpanded, setIsSolarDetailExpanded] = useState(false);
+  const [isBreakdownExpanded, setIsBreakdownExpanded] = useState(false);
+
+  // Edit investment cost modal state
   const [showEditCost, setShowEditCost] = useState(false);
   const [costInput, setCostInput] = useState(String(payback.systemCostInr));
   const [isSavingCost, setIsSavingCost] = useState(false);
+
+  // Installed date formatting e.g. "Oct 2026"
+  const installedMonthYear = useMemo(() => {
+    if (!profile.installationDate) return 'Oct 2026';
+    try {
+      const parts = profile.installationDate.split('-');
+      const y = Number(parts[0]);
+      const m = Number(parts[1] || 1);
+      const d = new Date(y, m - 1, 1);
+      return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+    } catch {
+      return profile.installationDate;
+    }
+  }, [profile.installationDate]);
+
+  // Average daily solar gen calculation
+  const dailyGenKwh = useMemo(() => {
+    if (smartAnalysis.solarAnalysis.currentDailyGenKwh !== null) {
+      return smartAnalysis.solarAnalysis.currentDailyGenKwh.toFixed(1);
+    }
+    const billCount = Math.max(1, bills.length);
+    if (annual.totalGenerationKwh > 0) {
+      return (annual.totalGenerationKwh / (billCount * 30)).toFixed(1);
+    }
+    return ((profile.capacityKw || 5) * 2.78).toFixed(1);
+  }, [smartAnalysis.solarAnalysis.currentDailyGenKwh, annual.totalGenerationKwh, bills.length, profile.capacityKw]);
 
   const parseSystemCostInput = (input: string): number => {
     const clean = input.trim().toLowerCase().replace(/,/g, '');
@@ -104,17 +137,15 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
         updatedAt: Date.now(),
       };
 
-      // 1. Persist directly to Firebase Firestore & AsyncStorage
       await saveSystemProfile(updatedProfile);
 
-      // 2. Notify parent state handler if provided
       if (onProfileSave) {
         await onProfileSave(updatedProfile);
       }
 
       setIsSavingCost(false);
       setShowEditCost(false);
-      Alert.alert('Saved', 'System investment cost updated & synced with Firebase.');
+      Alert.alert('Saved', 'System investment cost updated successfully.');
     } catch (e: any) {
       setIsSavingCost(false);
       Alert.alert('Error', e?.message || 'Failed to save system cost.');
@@ -123,728 +154,309 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
 
   const tableRows = [...monthlyRows].reverse();
 
-  const totalConsumptionKwh = annual.totalDirectUseKwh + annual.totalImportKwh;
-  const selfSufficiencyPct =
-    totalConsumptionKwh > 0
-      ? Math.min(
-          100,
-          Math.max(
-            0,
-            Math.round((annual.totalDirectUseKwh / totalConsumptionKwh) * 100)
-          )
-        )
-      : 0;
-
-  // ── 12-Month Annual Forecast Calculations ──
-  const billCount = Math.max(1, bills.length);
-  const genBillsCount = Math.max(
-    1,
-    bills.filter((b) => b.generationKwh !== null && b.generationKwh !== undefined).length
-  );
-
-  const monthlyAvgGen =
-    annual.totalGenerationKwh > 0
-      ? annual.totalGenerationKwh / genBillsCount
-      : (profile.capacityKw || 5) * 120;
-  const forecastAnnualGen = Math.round(monthlyAvgGen * 12);
-
-  const monthlyAvgDirect = annual.totalDirectUseKwh / billCount;
-  const forecastAnnualDirect = Math.round(monthlyAvgDirect * 12);
-
-  const monthlyAvgExport = annual.totalExportKwh / billCount;
-  const forecastAnnualExport = Math.round(monthlyAvgExport * 12);
-
-  const monthlyAvgImport = annual.totalImportKwh / billCount;
-  const forecastAnnualImport = Math.round(monthlyAvgImport * 12);
-
-  const forecastAnnualSavings = Math.round(payback.annualProjectedSavingsInr);
-  const forecastAnnualBills = Math.round((annual.totalBillsPaid / billCount) * 12);
-  const forecastTotalConsumption = forecastAnnualDirect + forecastAnnualImport;
-  const forecastSelfSufficiencyPct =
-    forecastTotalConsumption > 0
-      ? Math.min(100, Math.max(0, Math.round((forecastAnnualDirect / forecastTotalConsumption) * 100)))
-      : selfSufficiencyPct;
-
-  const formatInrCompact = (val: number): string => {
-    if (val >= 100000) {
-      const inLakhs = val / 100000;
-      return `₹${inLakhs.toFixed(inLakhs % 1 === 0 ? 0 : 1)}L`;
-    }
-    if (val >= 10000) {
-      return `₹${(val / 1000).toFixed(1)}k`;
-    }
-    return `₹${Math.round(val).toLocaleString('en-IN')}`;
-  };
-
-  const getBillStatusPill = (status: string) => {
-    switch (status) {
-      case 'lower':
-        return { bg: '#ECFDF5', text: '#059669', border: '#A7F3D0' };
-      case 'higher':
-        return { bg: '#FEF2F2', text: '#DC2626', border: '#FECACA' };
-      case 'normal':
-      default:
-        return { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' };
-    }
-  };
-
-  const getSolarStatusPill = (status: string) => {
-    switch (status) {
-      case 'good':
-        return { bg: '#ECFDF5', text: '#059669', border: '#A7F3D0' };
-      case 'lower':
-        return { bg: '#FEF2F2', text: '#DC2626', border: '#FECACA' };
-      case 'normal':
-      default:
-        return { bg: '#E0F2FE', text: '#0284C7', border: '#BAE6FD' };
-    }
-  };
-
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Page Header ── */}
-      <View style={styles.topBar}>
-        <Text style={styles.pageTitle}>Solar Analytics</Text>
-        <Text style={styles.pageSub}>
-          Summary across {bills.length} billing cycle{bills.length === 1 ? '' : 's'}
-        </Text>
-      </View>
+      {/* ── Screen Header ── */}
+      {/* <View style={styles.headerRow}>
+        <View style={styles.headerIconBox}>
+          <Ionicons name="sunny" size={24} color="#EA580C" />
+        </View>
+        <View style={styles.headerTextCol}>
+          <Text style={styles.screenTitle}>Solar Analytics</Text>
+          <Text style={styles.screenSub}>Your solar savings at a glance</Text>
+        </View>
+      </View> */}
 
-      {/* ── 1. Solar Investment & Payback Timeline ── */}
-      <Card
-        title="Investment & Payback"
-        subtitle={
-          payback.isFullyRecovered
-            ? 'Capital fully recovered!'
-            : payback.remainingMonths > 0
-            ? `Target break-even: ${payback.breakEvenDate} (${payback.yearsRemainingFormatted})`
-            : `Target break-even: ${payback.breakEvenDate}`
-        }
-        style={styles.cardSpacing}
-        badge={
-          <View style={[styles.badge, payback.isFullyRecovered ? styles.badgeSuccess : styles.badgeGold]}>
-            <Text style={[styles.badgeText, payback.isFullyRecovered ? { color: COLORS.success } : { color: '#D97706' }]}>
-              {payback.isFullyRecovered ? '🎉 100% Free Power' : `${payback.recoveryPct}% Recovered`}
+      {/* ── Card 1: Your investment ── */}
+      <View style={styles.heroCard}>
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroTitleCol}>
+            <Text style={styles.cardTitle}>Your investment</Text>
+            <Text style={styles.cardSub}>
+              How much of your solar system cost is recovered through savings.
             </Text>
           </View>
-        }
-      >
-        {/* Recovery Progress Bar */}
-        <View style={styles.recoveryBox}>
-          <View style={styles.recoveryHeader}>
-            <Text style={styles.recoveryTitle}>Capital Recovery Progress</Text>
-            <Text style={[styles.recoveryPctText, payback.isFullyRecovered && { color: COLORS.success }]}>
-              {payback.recoveryPct}%
+          <View style={styles.paidBackBadge}>
+            <Text style={styles.paidBackBadgeText}>
+              {payback.recoveryPct}% paid back
             </Text>
           </View>
-          <ProgressBar
-            value={payback.recoveryPct}
-            color={payback.isFullyRecovered ? COLORS.success : COLORS.gold}
-            height={7}
+        </View>
+
+        {/* Horizontal Progress Bar */}
+        <View style={styles.progressTrack}>
+          <View
+            style={[
+              styles.progressBarFill,
+              { width: `${Math.min(100, Math.max(payback.recoveryPct > 0 ? 3 : 0, payback.recoveryPct))}%` },
+            ]}
           />
-          <View style={styles.recoveryFooter}>
-            <Text style={styles.footerMarker}>
-              Installed {profile.installationDate ? profile.installationDate.slice(0, 7) : 'Day 1'}
-            </Text>
-            <Text style={styles.footerMarker}>
-              {payback.remainingInr > 0 ? `₹${payback.remainingInr.toLocaleString('en-IN')} left` : 'Fully recovered'}
-            </Text>
-            <Text
-              style={[
-                styles.footerMarker,
-                { color: payback.isFullyRecovered ? COLORS.success : '#D97706', fontWeight: FONT.semi },
-              ]}
-            >
-              {payback.isFullyRecovered ? 'Free Electricity' : payback.breakEvenDate}
-            </Text>
-          </View>
         </View>
 
-        {/* 3 Metric Tiles: Invested, Recovered, Savings */}
-        <View style={styles.metricGrid}>
-          <View style={styles.metricTile}>
-            <Text style={styles.metricLabel}>INVESTMENT</Text>
-            <Text style={styles.metricVal}>{formatInrCompact(payback.systemCostInr)}</Text>
-            <TouchableOpacity
-              id="btn-edit-system-cost"
-              style={styles.editPill}
-              onPress={() => {
-                setCostInput(payback.isBenchmarkCost ? '' : String(payback.systemCostInr));
-                setShowEditCost(true);
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="pencil" size={10} color="#D97706" />
-              <Text style={styles.editPillText}>Edit</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.metricTile}>
-            <Text style={styles.metricLabel}>RECOVERED</Text>
-            <Text style={[styles.metricVal, { color: COLORS.success }]}>
-              {formatInrCompact(payback.recoveredSoFarInr)}
-            </Text>
-            <Text style={styles.metricSub}>{payback.recoveryPct}% recovered</Text>
-          </View>
-
-          <View style={styles.metricTile}>
-            <Text style={styles.metricLabel}>ANNUAL SAVINGS</Text>
-            <Text style={[styles.metricVal, { color: '#D97706' }]}>
-              {formatInrCompact(payback.annualProjectedSavingsInr)}
-            </Text>
-            <Text style={styles.metricSub}>~₹{Math.round(payback.monthlyAverageSavingsInr).toLocaleString('en-IN')}/mo</Text>
-          </View>
-        </View>
-
-        {/* Lifetime Profit Highlight Banner */}
-        <View style={styles.lifetimeBanner}>
-          <Ionicons name="sparkles" size={15} color="#D97706" />
-          <Text style={styles.lifetimeText}>
-            Est. 25-Year Net Profit:{' '}
-            <Text style={styles.lifetimeVal}>
-              ₹{payback.estimated25YearNetProfitInr.toLocaleString('en-IN')}
+        {/* Milestones row */}
+        <View style={styles.milestonesRow}>
+          <Text style={styles.milestoneText}>
+            Installed {installedMonthYear}
+          </Text>
+          <Text style={styles.milestoneText}>
+            Break-even around{' '}
+            <Text style={styles.breakEvenHighlight}>
+              {payback.isFullyRecovered ? 'Recovered 🎉' : payback.breakEvenDate}
             </Text>
           </Text>
         </View>
-      </Card>
 
-      {bills.length === 0 && (
-        <InfoNote text="Add your first monthly bill to see analytics." color={COLORS.info} style={styles.cardSpacing} />
-      )}
+        {/* 2-Tile Split: Saved so far & Estimated yearly savings */}
+        <View style={styles.tilesSplitRow}>
+          {/* Left: Saved so far */}
+          <View style={styles.savedTile}>
+            <Ionicons name="wallet-outline" size={24} color="#16A34A" />
+            <Text style={styles.savedTileAmount}>
+              ₹{Math.round(payback.recoveredSoFarInr).toLocaleString('en-IN')}
+            </Text>
+            <Text style={styles.savedTileLabel}>saved so far</Text>
+          </View>
 
-      {/* ── 2. Smart Performance Audit (Answers the 3 Core Questions) ── */}
-      {bills.length > 0 && (
-        <Card
-          title="Smart Performance Audit"
-          subtitle={`Answers key questions for ${smartAnalysis.comparisonPeriod}`}
-          style={styles.cardSpacing}
-          badge={
-            <View
-              style={[
-                styles.badge,
-                smartAnalysis.actionCheck.severity === 'warning'
-                  ? styles.badgeWarning
-                  : smartAnalysis.actionCheck.severity === 'info'
-                  ? styles.badgeGold
-                  : styles.badgeSuccess,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.badgeText,
-                  {
-                    color:
-                      smartAnalysis.actionCheck.severity === 'warning'
-                        ? '#DC2626'
-                        : smartAnalysis.actionCheck.severity === 'info'
-                        ? '#D97706'
-                        : COLORS.success,
-                  },
-                ]}
-              >
-                {smartAnalysis.actionCheck.actionRequired ? '⚡ Action Suggested' : '✓ System Normal'}
-              </Text>
+          {/* Right: Estimated yearly savings */}
+          <View style={styles.yearlyTile}>
+            <Ionicons name="stats-chart" size={24} color="#EA580C" />
+            <Text style={styles.yearlyTileAmount}>
+              ₹{Math.round(payback.annualProjectedSavingsInr).toLocaleString('en-IN')}
+            </Text>
+            <View style={styles.yearlyTileLabelRow}>
+              <Text style={styles.yearlyTileLabel}>estimated yearly savings</Text>
+              <Ionicons name="information-circle-outline" size={13} color="#94A3B8" />
             </View>
-          }
+          </View>
+        </View>
+
+        {/* Edit system cost button */}
+        <TouchableOpacity
+          id="btn-edit-system-cost"
+          style={styles.editCostBtn}
+          onPress={() => {
+            setCostInput(payback.isBenchmarkCost ? '' : String(payback.systemCostInr));
+            setShowEditCost(true);
+          }}
+          activeOpacity={0.7}
         >
-          {/* Question 1: Is my electricity bill higher or lower than normal? */}
-          <View style={styles.auditSection}>
-            <View style={styles.auditHeaderRow}>
-              <View style={[styles.auditIconBadge, { backgroundColor: '#F1F5F9' }]}>
-                <Ionicons name="receipt-outline" size={16} color={COLORS.text} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.auditQuestion}>1. Is my electricity bill higher or lower than normal?</Text>
-                <Text style={styles.auditAnswer}>{smartAnalysis.threeQuestions.billAnswer}</Text>
-              </View>
-              <View
-                style={[
-                  styles.statusPill,
-                  {
-                    backgroundColor: getBillStatusPill(smartAnalysis.billAnalysis.status).bg,
-                    borderColor: getBillStatusPill(smartAnalysis.billAnalysis.status).border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusPillText,
-                    { color: getBillStatusPill(smartAnalysis.billAnalysis.status).text },
-                  ]}
-                >
-                  {smartAnalysis.billAnalysis.statusLabel}
-                </Text>
-              </View>
-            </View>
+          <Ionicons name="pencil-outline" size={16} color="#EA580C" />
+          <Text style={styles.editCostBtnText}>Edit system cost</Text>
+          <Ionicons name="chevron-forward" size={16} color="#EA580C" />
+        </TouchableOpacity>
+      </View>
 
-            {/* Metric Comparison Strip */}
-            <View style={styles.auditComparisonRow}>
-              <View style={styles.auditMetricBox}>
-                <Text style={styles.auditMetricLabel}>LATEST BILL</Text>
-                <Text style={styles.auditMetricVal}>
-                  ₹{Math.round(smartAnalysis.billAnalysis.currentAmount).toLocaleString('en-IN')}
-                </Text>
-                <Text style={styles.auditMetricSub}>
-                  {smartAnalysis.billAnalysis.amountChangePct !== null
-                    ? `${smartAnalysis.billAnalysis.amountChangePct >= 0 ? '+' : ''}${smartAnalysis.billAnalysis.amountChangePct}% MoM`
-                    : 'Current period'}
-                </Text>
-              </View>
-
-              <View style={styles.auditMetricDivider} />
-
-              <View style={styles.auditMetricBox}>
-                <Text style={styles.auditMetricLabel}>TOTAL CONSUMED</Text>
-                <Text style={styles.auditMetricVal}>
-                  {smartAnalysis.billAnalysis.currentConsumptionKwh.toFixed(0)}{' '}
-                  <Text style={styles.auditMetricUnit}>kWh</Text>
-                </Text>
-                <Text style={styles.auditMetricSub}>
-                  ~{smartAnalysis.billAnalysis.currentDailyConsumptionKwh} kWh/day
-                </Text>
-              </View>
-
-              <View style={styles.auditMetricDivider} />
-
-              <View style={styles.auditMetricBox}>
-                <Text style={styles.auditMetricLabel}>NET GRID IMPORT</Text>
-                <Text style={styles.auditMetricVal}>
-                  {latestBill?.importKwh ?? 0} <Text style={styles.auditMetricUnit}>kWh</Text>
-                </Text>
-                <Text style={styles.auditMetricSub}>
-                  {latestBill?.closingCreditKwh ? `${latestBill.closingCreditKwh} banked` : '0 banked'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.auditExplanationBox}>
-              <Ionicons name="information-circle-outline" size={14} color={COLORS.textSub} />
-              <Text style={styles.auditExplanationText}>{smartAnalysis.billAnalysis.explanation}</Text>
-            </View>
-          </View>
-
-          <Divider style={{ marginVertical: SPACING.md }} />
-
-          {/* Question 2: Is my solar system generating enough electricity? */}
-          <View style={styles.auditSection}>
-            <View style={styles.auditHeaderRow}>
-              <View style={[styles.auditIconBadge, { backgroundColor: '#FEF3C7' }]}>
-                <Ionicons name="sunny-outline" size={16} color="#D97706" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.auditQuestion}>2. Is my solar system generating enough electricity?</Text>
-                <Text style={styles.auditAnswer}>{smartAnalysis.threeQuestions.solarAnswer}</Text>
-              </View>
-              <View
-                style={[
-                  styles.statusPill,
-                  {
-                    backgroundColor: getSolarStatusPill(smartAnalysis.solarAnalysis.status).bg,
-                    borderColor: getSolarStatusPill(smartAnalysis.solarAnalysis.status).border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusPillText,
-                    { color: getSolarStatusPill(smartAnalysis.solarAnalysis.status).text },
-                  ]}
-                >
-                  {smartAnalysis.solarAnalysis.statusLabel}
-                </Text>
-              </View>
-            </View>
-
-            {/* Solar Generation Metrics */}
-            <View style={styles.auditComparisonRow}>
-              <View style={styles.auditMetricBox}>
-                <Text style={styles.auditMetricLabel}>CYCLE PRODUCTION</Text>
-                <Text style={[styles.auditMetricVal, { color: '#D97706' }]}>
-                  {smartAnalysis.solarAnalysis.currentGenerationKwh !== null
-                    ? smartAnalysis.solarAnalysis.currentGenerationKwh
-                    : '—'}{' '}
-                  <Text style={styles.auditMetricUnit}>kWh</Text>
-                </Text>
-                <Text style={styles.auditMetricSub}>
-                  {smartAnalysis.solarAnalysis.generationChangePct !== null
-                    ? `${smartAnalysis.solarAnalysis.generationChangePct >= 0 ? '+' : ''}${smartAnalysis.solarAnalysis.generationChangePct}% MoM`
-                    : 'Current cycle'}
-                </Text>
-              </View>
-
-              <View style={styles.auditMetricDivider} />
-
-              <View style={styles.auditMetricBox}>
-                <Text style={styles.auditMetricLabel}>DAILY YIELD</Text>
-                <Text style={styles.auditMetricVal}>
-                  {smartAnalysis.solarAnalysis.currentYieldKwhPerKwDay !== null
-                    ? `${smartAnalysis.solarAnalysis.currentYieldKwhPerKwDay}`
-                    : '—'}{' '}
-                  <Text style={styles.auditMetricUnit}>kWh/kW/d</Text>
-                </Text>
-                <Text style={styles.auditMetricSub}>
-                  ~{smartAnalysis.solarAnalysis.currentDailyGenKwh ?? '—'} kWh/day
-                </Text>
-              </View>
-
-              <View style={styles.auditMetricDivider} />
-
-              <View style={styles.auditMetricBox}>
-                <Text style={styles.auditMetricLabel}>GOA BENCHMARK</Text>
-                <Text style={styles.auditMetricVal}>
-                  {smartAnalysis.solarAnalysis.benchmarkYieldKwhPerKwDay}{' '}
-                  <Text style={styles.auditMetricUnit}>kWh/kW/d</Text>
-                </Text>
-                <Text style={styles.auditMetricSub}>
-                  {smartAnalysis.solarAnalysis.season === 'monsoon' ? 'Monsoon overcast' : 'Sunny baseline'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.auditExplanationBox}>
-              <Ionicons name="sparkles-outline" size={14} color="#D97706" />
-              <Text style={styles.auditExplanationText}>{smartAnalysis.solarAnalysis.explanation}</Text>
-            </View>
-
-            {smartAnalysis.solarAnalysis.diagnosticAdvice.length > 0 && (
-              <View style={styles.auditAdviceBox}>
-                {smartAnalysis.solarAnalysis.diagnosticAdvice.map((advice, idx) => (
-                  <View key={idx} style={styles.auditAdviceRow}>
-                    <Ionicons name="checkmark-circle" size={13} color="#059669" />
-                    <Text style={styles.auditAdviceText}>{advice}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-
-          <Divider style={{ marginVertical: SPACING.md }} />
-
-          {/* Question 3: Should I take any action? */}
-          <View style={styles.auditSection}>
-            <View style={styles.auditHeaderRow}>
-              <View
-                style={[
-                  styles.auditIconBadge,
-                  {
-                    backgroundColor:
-                      smartAnalysis.actionCheck.severity === 'warning'
-                        ? '#FEF2F2'
-                        : smartAnalysis.actionCheck.severity === 'info'
-                        ? '#EFF6FF'
-                        : '#ECFDF5',
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={
-                    smartAnalysis.actionCheck.severity === 'warning'
-                      ? 'alert-circle-outline'
-                      : smartAnalysis.actionCheck.severity === 'info'
-                      ? 'information-circle-outline'
-                      : 'shield-checkmark-outline'
-                  }
-                  size={16}
-                  color={
-                    smartAnalysis.actionCheck.severity === 'warning'
-                      ? '#DC2626'
-                      : smartAnalysis.actionCheck.severity === 'info'
-                      ? '#2563EB'
-                      : '#059669'
-                  }
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.auditQuestion}>3. Should I take any action?</Text>
-                <Text style={styles.auditActionTitle}>{smartAnalysis.actionCheck.title}</Text>
-              </View>
-            </View>
-
-            <View
-              style={[
-                styles.auditActionBanner,
-                smartAnalysis.actionCheck.severity === 'warning'
-                  ? styles.auditActionWarning
-                  : smartAnalysis.actionCheck.severity === 'info'
-                  ? styles.auditActionInfo
-                  : styles.auditActionSuccess,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.auditActionRecText,
-                  {
-                    color:
-                      smartAnalysis.actionCheck.severity === 'warning'
-                        ? '#991B1B'
-                        : smartAnalysis.actionCheck.severity === 'info'
-                        ? '#1E40AF'
-                        : '#065F46',
-                  },
-                ]}
-              >
-                {smartAnalysis.actionCheck.recommendation}
-              </Text>
-            </View>
-          </View>
-        </Card>
-      )}
-
-      {/* ── 3. Lifetime / Annual Summary ── */}
-      {bills.length > 0 && (
-        <Card
-          title="Lifetime Summary"
-          subtitle="Aggregate figures across all bills"
-          style={styles.cardSpacing}
-        >
-          {/* Savings vs Bills Paid */}
-          <View style={styles.impactRow}>
-            <View style={styles.impactCol}>
-              <Text style={styles.impactLabel}>EST. SOLAR SAVINGS</Text>
-              <Text style={[styles.impactVal, { color: COLORS.success }]}>
-                ₹{Math.round(annual.estimatedAvoidedCostInr).toLocaleString('en-IN')}
-              </Text>
-              <Text style={styles.impactSub}>Avoided LTDS-II cost</Text>
-            </View>
-            <View style={styles.impactDivider} />
-            <View style={styles.impactCol}>
-              <Text style={styles.impactLabel}>TOTAL BILLS PAID</Text>
-              <Text style={[styles.impactVal, { color: COLORS.text }]}>
-                ₹{Math.round(annual.totalBillsPaid).toLocaleString('en-IN')}
-              </Text>
-              <Text style={styles.impactSub}>Fixed charges & duties</Text>
-            </View>
-          </View>
-
-          <Divider style={{ marginVertical: SPACING.md }} />
-
-          {/* 4 Energy Flow Cards (2x2 Grid) */}
-          <View style={styles.energyFlowGrid}>
-            <View style={styles.flowTile}>
-              <View style={styles.flowTileHeader}>
-                <View style={[styles.flowIconBadge, { backgroundColor: '#FEF3C7' }]}>
-                  <Ionicons name="sunny" size={14} color="#D97706" />
-                </View>
-                <Text style={styles.flowTileLabel}>Total Generated</Text>
-              </View>
-              <Text style={[styles.flowTileVal, { color: '#D97706' }]}>
-                {annual.totalGenerationKwh} <Text style={styles.flowTileUnit}>kWh</Text>
-              </Text>
-            </View>
-
-            <View style={styles.flowTile}>
-              <View style={styles.flowTileHeader}>
-                <View style={[styles.flowIconBadge, { backgroundColor: '#DCFCE7' }]}>
-                  <Ionicons name="flash" size={14} color="#059669" />
-                </View>
-                <Text style={styles.flowTileLabel}>Direct Solar Use</Text>
-              </View>
-              <Text style={[styles.flowTileVal, { color: '#059669' }]}>
-                {annual.totalDirectUseKwh} <Text style={styles.flowTileUnit}>kWh</Text>
-              </Text>
-            </View>
-
-            <View style={styles.flowTile}>
-              <View style={styles.flowTileHeader}>
-                <View style={[styles.flowIconBadge, { backgroundColor: '#ECFDF5' }]}>
-                  <Ionicons name="arrow-up" size={14} color="#059669" />
-                </View>
-                <Text style={styles.flowTileLabel}>Total Exported</Text>
-              </View>
-              <Text style={[styles.flowTileVal, { color: COLORS.text }]}>
-                {annual.totalExportKwh} <Text style={styles.flowTileUnit}>kWh</Text>
-              </Text>
-            </View>
-
-            <View style={styles.flowTile}>
-              <View style={styles.flowTileHeader}>
-                <View style={[styles.flowIconBadge, { backgroundColor: '#E0F2FE' }]}>
-                  <Ionicons name="arrow-down" size={14} color="#0284C7" />
-                </View>
-                <Text style={styles.flowTileLabel}>Total Imported</Text>
-              </View>
-              <Text style={[styles.flowTileVal, { color: COLORS.text }]}>
-                {annual.totalImportKwh} <Text style={styles.flowTileUnit}>kWh</Text>
-              </Text>
-            </View>
-          </View>
-
-          {/* Direct Solar Self-Sufficiency */}
-          <View style={styles.selfSuffBox}>
-            <View style={styles.selfSuffHeader}>
-              <Text style={styles.selfSuffLabel}>Direct Solar Self-Sufficiency</Text>
-              <Text style={[styles.selfSuffPct, { color: '#059669' }]}>{selfSufficiencyPct}%</Text>
-            </View>
-            <ProgressBar value={selfSufficiencyPct} color="#059669" height={7} />
-            <Text style={styles.selfSuffNote}>
-              Percentage of total electricity needs met directly by daytime solar.
+      {/* ── Card 2: How your system is doing ── */}
+      <View style={styles.heroCard}>
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroTitleCol}>
+            <Text style={styles.cardTitle}>How your system is doing</Text>
+            <Text style={styles.cardSub}>
+              Based on your latest bill and solar generation
             </Text>
           </View>
-        </Card>
-      )}
 
-      {/* ── 3. Annual Forecast (12-Month Outlook) ── */}
-      {bills.length > 0 && (
-        <Card
-          title="Annual Forecast (12 Months)"
-          subtitle={`Projected 1-year solar flow based on ${bills.length} cycle${bills.length === 1 ? '' : 's'}`}
-          style={styles.cardSpacing}
-          badge={<Badge label="12-Mo Forecast" color={COLORS.gold} />}
-        >
-          {/* Projected Savings vs Bills */}
-          <View style={styles.impactRow}>
-            <View style={styles.impactCol}>
-              <Text style={styles.impactLabel}>PROJECTED ANNUAL SAVINGS</Text>
-              <Text style={[styles.impactVal, { color: COLORS.success }]}>
-                ₹{forecastAnnualSavings.toLocaleString('en-IN')}
-              </Text>
-              <Text style={styles.impactSub}>~₹{Math.round(payback.monthlyAverageSavingsInr).toLocaleString('en-IN')}/mo avg</Text>
-            </View>
-            <View style={styles.impactDivider} />
-            <View style={styles.impactCol}>
-              <Text style={styles.impactLabel}>EST. ANNUAL BILLS PAID</Text>
-              <Text style={[styles.impactVal, { color: COLORS.text }]}>
-                ₹{forecastAnnualBills.toLocaleString('en-IN')}
-              </Text>
-              <Text style={styles.impactSub}>Fixed charges & duties</Text>
-            </View>
-          </View>
-
-          <Divider style={{ marginVertical: SPACING.md }} />
-
-          {/* 4 Energy Flow Cards (2x2 Grid) */}
-          <View style={styles.energyFlowGrid}>
-            <View style={styles.flowTile}>
-              <View style={styles.flowTileHeader}>
-                <View style={[styles.flowIconBadge, { backgroundColor: '#FEF3C7' }]}>
-                  <Ionicons name="sunny" size={14} color="#D97706" />
-                </View>
-                <Text style={styles.flowTileLabel}>Forecasted Gen</Text>
-              </View>
-              <Text style={[styles.flowTileVal, { color: '#D97706' }]}>
-                {forecastAnnualGen.toLocaleString('en-IN')} <Text style={styles.flowTileUnit}>kWh</Text>
-              </Text>
-            </View>
-
-            <View style={styles.flowTile}>
-              <View style={styles.flowTileHeader}>
-                <View style={[styles.flowIconBadge, { backgroundColor: '#DCFCE7' }]}>
-                  <Ionicons name="flash" size={14} color="#059669" />
-                </View>
-                <Text style={styles.flowTileLabel}>Forecasted Direct Use</Text>
-              </View>
-              <Text style={[styles.flowTileVal, { color: '#059669' }]}>
-                {forecastAnnualDirect.toLocaleString('en-IN')} <Text style={styles.flowTileUnit}>kWh</Text>
-              </Text>
-            </View>
-
-            <View style={styles.flowTile}>
-              <View style={styles.flowTileHeader}>
-                <View style={[styles.flowIconBadge, { backgroundColor: '#ECFDF5' }]}>
-                  <Ionicons name="arrow-up" size={14} color="#059669" />
-                </View>
-                <Text style={styles.flowTileLabel}>Forecasted Export</Text>
-              </View>
-              <Text style={[styles.flowTileVal, { color: COLORS.text }]}>
-                {forecastAnnualExport.toLocaleString('en-IN')} <Text style={styles.flowTileUnit}>kWh</Text>
-              </Text>
-            </View>
-
-            <View style={styles.flowTile}>
-              <View style={styles.flowTileHeader}>
-                <View style={[styles.flowIconBadge, { backgroundColor: '#E0F2FE' }]}>
-                  <Ionicons name="arrow-down" size={14} color="#0284C7" />
-                </View>
-                <Text style={styles.flowTileLabel}>Forecasted Import</Text>
-              </View>
-              <Text style={[styles.flowTileVal, { color: COLORS.text }]}>
-                {forecastAnnualImport.toLocaleString('en-IN')} <Text style={styles.flowTileUnit}>kWh</Text>
-              </Text>
-            </View>
-          </View>
-
-          {/* Forecasted Self-Sufficiency */}
-          <View style={styles.selfSuffBox}>
-            <View style={styles.selfSuffHeader}>
-              <Text style={styles.selfSuffLabel}>Projected Self-Sufficiency</Text>
-              <Text style={[styles.selfSuffPct, { color: '#059669' }]}>{forecastSelfSufficiencyPct}%</Text>
-            </View>
-            <ProgressBar value={forecastSelfSufficiencyPct} color="#059669" height={7} />
-            <Text style={styles.selfSuffNote}>
-              Expected percentage of total household electricity met directly by rooftop solar over 12 months.
-            </Text>
-          </View>
-        </Card>
-      )}
-
-      {/* ── 4. Monthly Performance Table ── */}
-      {tableRows.length > 0 && (
-        <Card
-          title="Monthly Performance"
-          subtitle="Cycle-by-cycle generation, credits, and bills"
-          style={styles.cardSpacing}
-        >
-          <View style={styles.tableHeaderRow}>
-            <Text style={[styles.th, { flex: 1.6 }]}>Period</Text>
-            <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Gen</Text>
-            <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Export</Text>
-            <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Credit</Text>
-            <Text style={[styles.th, { flex: 1.2, textAlign: 'right' }]}>Bill</Text>
-          </View>
-
-          {tableRows.map((row, idx) => (
-            <View key={row.period} style={styles.tableRowContainer}>
-              <View style={styles.tableRow}>
-                <View style={{ flex: 1.6 }}>
-                  <Text style={styles.tdPeriod} numberOfLines={1}>{row.period}</Text>
-                  {row.monthOverMonthChangePct !== null && (
-                    <Text
-                      style={[
-                        styles.trendBadge,
-                        { color: row.monthOverMonthChangePct >= 0 ? COLORS.success : COLORS.danger },
-                      ]}
-                    >
-                      {row.monthOverMonthChangePct >= 0 ? '▲' : '▼'} {Math.abs(row.monthOverMonthChangePct)}%
-                    </Text>
-                  )}
-                </View>
-                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: '#D97706', fontWeight: FONT.semi }]}>
-                  {row.generationKwh !== null ? row.generationKwh : '—'}
-                </Text>
-                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: COLORS.text }]}>
-                  {row.exportKwh}
-                </Text>
-                <Text style={[styles.td, { flex: 1, textAlign: 'right', color: '#059669', fontWeight: FONT.medium }]}>
-                  {row.closingCreditKwh}
-                </Text>
-                <Text style={[styles.td, { flex: 1.2, textAlign: 'right', fontWeight: FONT.bold }]}>
-                  ₹{Math.round(row.billAmount).toLocaleString('en-IN')}
-                </Text>
-              </View>
-              {row.avgGenerationPerDay !== null && (
-                <Text style={styles.avgDay}>
-                  {row.avgGenerationPerDay} kWh/day avg · {row.billingDays} days
-                </Text>
-              )}
-              {idx < tableRows.length - 1 && <View style={styles.tableDivider} />}
-            </View>
-          ))}
-
-          {bills.length < 3 && (
-            <InfoNote
-              text="Month-over-month trend (▲▼%) will appear after 3+ completed billing cycles. PRD §8.1."
-              color={COLORS.info}
-              style={{ marginTop: SPACING.md }}
+          <View
+            style={[
+              styles.healthBadge,
+              smartAnalysis.actionCheck.severity === 'warning'
+                ? styles.healthBadgeWarning
+                : styles.healthBadgeSuccess,
+            ]}
+          >
+            <Ionicons
+              name={
+                smartAnalysis.actionCheck.severity === 'warning'
+                  ? 'alert-circle'
+                  : 'checkmark-circle'
+              }
+              size={14}
+              color={
+                smartAnalysis.actionCheck.severity === 'warning'
+                  ? '#DC2626'
+                  : '#16A34A'
+              }
             />
+            <Text
+              style={[
+                styles.healthBadgeText,
+                smartAnalysis.actionCheck.severity === 'warning'
+                  ? styles.healthBadgeTextWarning
+                  : styles.healthBadgeTextSuccess,
+              ]}
+            >
+              {smartAnalysis.actionCheck.severity === 'warning'
+                ? 'Action suggested'
+                : 'Looking good'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Child Card 1: Electricity bill */}
+        <TouchableOpacity
+          id="card-electricity-bill-detail"
+          style={styles.childCard}
+          onPress={() => setIsBillDetailExpanded(!isBillDetailExpanded)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.childCardTopRow}>
+            <View style={styles.billIconBox}>
+              <Ionicons name="document-text" size={20} color="#2563EB" />
+            </View>
+            <View style={styles.childCardInfoCol}>
+              <Text style={styles.childCardTitle}>Electricity bill</Text>
+              <Text style={styles.childCardSub}>
+                Your latest monthly bill amount
+              </Text>
+            </View>
+            <Ionicons
+              name={isBillDetailExpanded ? 'chevron-up' : 'chevron-forward'}
+              size={18}
+              color="#94A3B8"
+            />
+          </View>
+
+          <View style={styles.childCardBottomRow}>
+            <View>
+              <Text style={styles.childCardLargeVal}>
+                ₹{latestBill ? Math.round(latestBill.billAmount).toLocaleString('en-IN') : '0'}
+              </Text>
+              <Text style={styles.childCardUnitSub}>this month</Text>
+            </View>
+
+            <View style={styles.statusPillBox}>
+              <Ionicons name="trending-up" size={16} color="#16A34A" />
+              <View>
+                <Text style={styles.statusPillPrimary}>
+                  {smartAnalysis.billAnalysis.statusLabel || 'About normal'}
+                </Text>
+                <Text style={styles.statusPillSecondary}>for your home</Text>
+              </View>
+            </View>
+          </View>
+
+          {isBillDetailExpanded && (
+            <View style={styles.childCardExpandedContent}>
+              <Text style={styles.expandedDescText}>
+                {smartAnalysis.billAnalysis.explanation}
+              </Text>
+            </View>
           )}
-        </Card>
+        </TouchableOpacity>
+
+        {/* Child Card 2: Solar production */}
+        <TouchableOpacity
+          id="card-solar-production-detail"
+          style={styles.childCard}
+          onPress={() => setIsSolarDetailExpanded(!isSolarDetailExpanded)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.childCardTopRow}>
+            <View style={styles.solarIconBox}>
+              <Ionicons name="sunny" size={20} color="#F59E0B" />
+            </View>
+            <View style={styles.childCardInfoCol}>
+              <Text style={styles.childCardTitle}>Solar production</Text>
+              <Text style={styles.childCardSub}>
+                Average energy generated by your system
+              </Text>
+            </View>
+            <Ionicons
+              name={isSolarDetailExpanded ? 'chevron-up' : 'chevron-forward'}
+              size={18}
+              color="#94A3B8"
+            />
+          </View>
+
+          <View style={styles.childCardBottomRow}>
+            <View>
+              <Text style={styles.childCardLargeVal}>
+                {dailyGenKwh} <Text style={styles.childCardUnit}>kWh/day</Text>
+              </Text>
+              <Text style={styles.childCardUnitSub}>on average</Text>
+            </View>
+
+            <View style={styles.statusPillBox}>
+              <Ionicons name="stats-chart" size={16} color="#16A34A" />
+              <View>
+                <Text style={styles.statusPillPrimary}>
+                  {smartAnalysis.solarAnalysis.status === 'lower' ? 'Below expected' : 'In line with'}
+                </Text>
+                <Text style={styles.statusPillSecondary}>expected output</Text>
+              </View>
+            </View>
+          </View>
+
+          {isSolarDetailExpanded && (
+            <View style={styles.childCardExpandedContent}>
+              <Text style={styles.expandedDescText}>
+                {smartAnalysis.solarAnalysis.explanation}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Card 3: Monthly Breakdown (Collapsible) ── */}
+      {tableRows.length > 0 && (
+        <View style={styles.historySection}>
+          <TouchableOpacity
+            id="btn-toggle-monthly-breakdown"
+            style={[styles.historyHeaderCard, isBreakdownExpanded && styles.historyHeaderCardExpanded]}
+            onPress={() => setIsBreakdownExpanded(!isBreakdownExpanded)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="calendar-outline" size={20} color="#475569" />
+            <Text style={styles.historyCardTitle}>View monthly breakdown</Text>
+            <Ionicons
+              name={isBreakdownExpanded ? 'chevron-up' : 'chevron-forward'}
+              size={18}
+              color="#94A3B8"
+            />
+          </TouchableOpacity>
+
+          {isBreakdownExpanded && (
+            <View style={styles.historyDropdown}>
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.th, { flex: 1.6 }]}>Period</Text>
+                <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Gen</Text>
+                <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Export</Text>
+                <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Credit</Text>
+                <Text style={[styles.th, { flex: 1.2, textAlign: 'right' }]}>Bill</Text>
+              </View>
+
+              {tableRows.map((row, idx) => (
+                <View key={row.period} style={styles.tableRowContainer}>
+                  <View style={styles.tableRow}>
+                    <Text style={[styles.tdPeriod, { flex: 1.6 }]} numberOfLines={1}>
+                      {row.period}
+                    </Text>
+                    <Text style={[styles.td, { flex: 1, textAlign: 'right', color: '#D97706', fontWeight: '600' }]}>
+                      {row.generationKwh !== null ? row.generationKwh : '—'}
+                    </Text>
+                    <Text style={[styles.td, { flex: 1, textAlign: 'right', color: '#334155' }]}>
+                      {row.exportKwh}
+                    </Text>
+                    <Text style={[styles.td, { flex: 1, textAlign: 'right', color: '#059669', fontWeight: '600' }]}>
+                      {row.closingCreditKwh}
+                    </Text>
+                    <Text style={[styles.td, { flex: 1.2, textAlign: 'right', fontWeight: '700', color: '#0F172A' }]}>
+                      ₹{Math.round(row.billAmount).toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                  {idx < tableRows.length - 1 && <View style={styles.tableDivider} />}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
       )}
 
-      {/* ── Edit Investment Modal ── */}
+      {/* ── Edit System Investment Modal ── */}
       <Modal visible={showEditCost} animationType="slide" transparent onRequestClose={() => setShowEditCost(false)}>
         <KeyboardAvoidingView style={styles.overlay}>
           <View style={styles.sheet}>
@@ -854,7 +466,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                 id="btn-close-edit-cost"
                 onPress={() => setShowEditCost(false)}
               >
-                <Ionicons name="close" size={22} color={COLORS.textSub} />
+                <Ionicons name="close" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
 
@@ -866,13 +478,11 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                 onChangeText={setCostInput}
                 keyboardType="numeric"
                 placeholder="e.g. 250000"
-                placeholderTextColor={COLORS.textMuted}
+                placeholderTextColor="#94A3B8"
               />
-              <InfoNote
-                text="Enter net capital expenditure for your rooftop solar system after central PM Surya Ghar and state subsidies. Default benchmark for Goa is ₹55,000 / kW."
-                color={COLORS.gold}
-                style={{ marginTop: SPACING.md }}
-              />
+              <Text style={styles.modalHelperText}>
+                Enter the net capital cost for your solar system after subsidies. Benchmark for Goa is ~₹55,000 / kW.
+              </Text>
             </View>
 
             <View style={[styles.sheetFooter, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
@@ -890,7 +500,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                 disabled={isSavingCost}
               >
                 <Text style={styles.saveBtnText}>
-                  {isSavingCost ? 'Saving to Firebase…' : 'Save Investment'}
+                  {isSavingCost ? 'Saving…' : 'Save Investment'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -904,539 +514,468 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#F8FAFC',
   },
   content: {
-    padding: SPACING.md,
-    paddingBottom: SPACING.xxl + 24,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
   },
-  topBar: {
-    marginBottom: SPACING.md,
-    paddingHorizontal: 2,
+
+  // ── Header ──
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
   },
-  pageTitle: {
-    fontSize: 22,
-    fontWeight: FONT.heavy,
-    color: COLORS.text,
+  headerIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  pageSub: {
-    fontSize: 12,
-    color: COLORS.textSub,
+  headerTextCol: {
+    flex: 1,
+  },
+  screenTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  screenSub: {
+    fontSize: 13,
+    color: '#64748B',
     marginTop: 2,
   },
-  cardSpacing: {
-    marginBottom: SPACING.lg,
-  },
 
-  badge: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-  },
-  badgeSuccess: {
-    backgroundColor: '#ECFDF5',
+  // ── Hero Cards ──
+  heroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: '#F1F5F9',
+    padding: 16,
+    marginBottom: 16,
+    ...SHADOW.card,
   },
-  badgeGold: {
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  badgeWarning: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: FONT.bold,
-  },
-
-  // Recovery Section
-  recoveryBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  recoveryHeader: {
+  heroTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  heroTitleCol: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  cardSub: {
+    fontSize: 12.5,
+    color: '#64748B',
+    marginTop: 3,
+    lineHeight: 17,
+  },
+  paidBackBadge: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  paidBackBadgeText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#EA580C',
+  },
+
+  // Progress Bar
+  progressTrack: {
+    height: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginTop: 4,
     marginBottom: 8,
   },
-  recoveryTitle: {
-    fontSize: 12,
-    fontWeight: FONT.semi,
-    color: COLORS.text,
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#EA580C',
+    borderRadius: 4,
   },
-  recoveryPctText: {
-    fontSize: 14,
-    fontWeight: FONT.heavy,
-    color: '#D97706',
-  },
-  recoveryFooter: {
+
+  // Milestones Row
+  milestonesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 6,
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  footerMarker: {
-    fontSize: 10,
-    color: COLORS.textMuted,
+  milestoneText: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  breakEvenHighlight: {
+    fontWeight: '700',
+    color: '#EA580C',
   },
 
-  // 3-Metric Grid
-  metricGrid: {
+  // 2-Tile Split (Saved vs Yearly)
+  tilesSplitRow: {
     flexDirection: 'row',
-    gap: SPACING.sm,
-    marginBottom: SPACING.md,
+    gap: 12,
+    marginBottom: 14,
   },
-  metricTile: {
+  savedTile: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
+    backgroundColor: '#F0FDF4',
     borderWidth: 1,
-    borderColor: '#EEF2F6',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: 'center',
+    borderColor: '#DCFCE7',
+    borderRadius: 14,
+    padding: 14,
   },
-  metricLabel: {
-    fontSize: 10,
-    fontWeight: FONT.semi,
-    color: COLORS.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
+  savedTileAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#16A34A',
+    marginTop: 10,
+    letterSpacing: -0.3,
   },
-  metricVal: {
-    fontSize: 16,
-    fontWeight: FONT.heavy,
-    color: COLORS.text,
-    marginVertical: 3,
-  },
-  metricSub: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-  },
-  editPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: RADIUS.full,
+  savedTileLabel: {
+    fontSize: 12,
+    color: '#64748B',
     marginTop: 2,
   },
-  editPillText: {
-    fontSize: 10,
-    fontWeight: FONT.bold,
-    color: '#D97706',
-  },
-
-  // Lifetime Banner
-  lifetimeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
+  yearlyTile: {
+    flex: 1,
     backgroundColor: '#FFFBEB',
     borderWidth: 1,
-    borderColor: '#FDE68A',
-    paddingVertical: 10,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.md,
+    borderColor: '#FEF3C7',
+    borderRadius: 14,
+    padding: 14,
   },
-  lifetimeText: {
-    fontSize: 12,
-    color: COLORS.textSub,
-  },
-  lifetimeVal: {
-    fontWeight: FONT.heavy,
-    color: '#059669',
-  },
-
-  // Financial Impact (Savings vs Paid)
-  impactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.xs,
-  },
-  impactCol: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  impactDivider: {
-    width: 1,
-    height: 42,
-    backgroundColor: '#E2E8F0',
-  },
-  impactLabel: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    fontWeight: FONT.semi,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  impactVal: {
+  yearlyTileAmount: {
     fontSize: 20,
-    fontWeight: FONT.heavy,
-    marginTop: 3,
+    fontWeight: '700',
+    color: '#EA580C',
+    marginTop: 10,
+    letterSpacing: -0.3,
   },
-  impactSub: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-
-  // Energy Flow Grid (2x2)
-  energyFlowGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-    marginBottom: SPACING.md,
-  },
-  flowTile: {
-    width: '48%',
-    flexGrow: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  flowTileHeader: {
+  yearlyTileLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
+    gap: 4,
+    marginTop: 2,
   },
-  flowIconBadge: {
-    width: 24,
-    height: 24,
+  yearlyTileLabel: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+
+  // Edit Cost Button
+  editCostBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  flowTileLabel: {
-    fontSize: 11,
-    color: COLORS.textSub,
-    fontWeight: FONT.medium,
-  },
-  flowTileVal: {
-    fontSize: 16,
-    fontWeight: FONT.heavy,
-    marginTop: 2,
-  },
-  flowTileUnit: {
-    fontSize: 11,
-    fontWeight: FONT.regular,
-    color: COLORS.textMuted,
+  editCostBtnText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#EA580C',
   },
 
-  // Self-Sufficiency
-  selfSuffBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
+  // Health Badge in Card 2
+  healthBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#EEF2F6',
-    padding: SPACING.md,
-    gap: 6,
   },
-  selfSuffHeader: {
+  healthBadgeSuccess: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+  },
+  healthBadgeWarning: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FECACA',
+  },
+  healthBadgeText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  healthBadgeTextSuccess: {
+    color: '#16A34A',
+  },
+  healthBadgeTextWarning: {
+    color: '#DC2626',
+  },
+
+  // ── Child Cards inside Card 2 ──
+  childCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginTop: 12,
+  },
+  childCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  billIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  solarIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#FFFBEB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  childCardInfoCol: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  childCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  childCardSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  childCardBottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    marginTop: 12,
   },
-  selfSuffLabel: {
+  childCardLargeVal: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  childCardUnit: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  childCardUnitSub: {
     fontSize: 12,
-    fontWeight: FONT.semi,
-    color: COLORS.text,
+    color: '#64748B',
+    marginTop: 2,
   },
-  selfSuffPct: {
-    fontSize: 14,
-    fontWeight: FONT.heavy,
+  statusPillBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
   },
-  selfSuffNote: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    lineHeight: 15,
+  statusPillPrimary: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16A34A',
+  },
+  statusPillSecondary: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  childCardExpandedContent: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  expandedDescText: {
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 17,
+  },
+
+  // ── History Section (Collapsible) ──
+  historySection: {
+    marginBottom: 8,
+  },
+  historyHeaderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...SHADOW.card,
+  },
+  historyHeaderCardExpanded: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderBottomColor: '#F1F5F9',
+  },
+  historyCardTitle: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  historyDropdown: {
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
 
   // Table
   tableHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
   th: {
-    fontSize: 10,
-    fontWeight: FONT.heavy,
-    color: COLORS.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
     textTransform: 'uppercase',
-    letterSpacing: 0.4,
   },
   tableRowContainer: {
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 4,
   },
   tdPeriod: {
-    fontSize: 12,
-    fontWeight: FONT.semi,
-    color: COLORS.text,
-  },
-  trendBadge: {
-    fontSize: 9,
-    fontWeight: FONT.bold,
-    marginTop: 1,
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#0F172A',
   },
   td: {
-    fontSize: 12,
-    color: COLORS.text,
-  },
-  avgDay: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    paddingHorizontal: 4,
-    marginTop: 2,
+    fontSize: 12.5,
   },
   tableDivider: {
     height: 1,
     backgroundColor: '#F1F5F9',
-    marginTop: 6,
+    marginTop: 8,
   },
 
-  // Edit Modal
+  // ── Modal ──
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
   },
   sheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: SPACING.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    marginBottom: 16,
   },
   sheetTitle: {
     fontSize: 18,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   sheetBody: {
-    padding: SPACING.lg,
+    marginBottom: 20,
   },
   fieldLabel: {
-    fontSize: 12,
-    fontWeight: FONT.semi,
-    color: COLORS.textSub,
-    marginBottom: 6,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 8,
   },
   input: {
-    backgroundColor: COLORS.surfaceRaised,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    color: COLORS.text,
-    fontSize: 15,
+    fontSize: 16,
+    color: '#0F172A',
+  },
+  modalHelperText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 8,
+    lineHeight: 16,
   },
   sheetFooter: {
     flexDirection: 'row',
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    gap: 12,
   },
   cancelBtn: {
     flex: 1,
-    padding: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
   },
   cancelBtnText: {
     fontSize: 14,
-    fontWeight: FONT.semi,
-    color: COLORS.textSub,
+    fontWeight: '600',
+    color: '#475569',
   },
   saveBtn: {
     flex: 2,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#EA580C',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.gold,
-    padding: 12,
-    borderRadius: RADIUS.md,
   },
   saveBtnText: {
     fontSize: 14,
-    fontWeight: FONT.bold,
-    color: COLORS.textInverse,
-  },
-
-  // ── Smart Audit Section Styles ──
-  auditSection: {
-    paddingVertical: 2,
-  },
-  auditHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SPACING.sm,
-    marginBottom: SPACING.xs,
-  },
-  auditIconBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: RADIUS.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  auditQuestion: {
-    fontSize: 13,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
-    marginBottom: 2,
-  },
-  auditAnswer: {
-    fontSize: 12,
-    color: COLORS.textSub,
-    lineHeight: 17,
-  },
-  auditComparisonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surfaceRaised,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.xs,
-    marginVertical: SPACING.xs,
-  },
-  auditMetricBox: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  auditMetricLabel: {
-    fontSize: 9,
-    fontWeight: FONT.bold,
-    color: COLORS.textMuted,
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  auditMetricVal: {
-    fontSize: 14,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
-  },
-  auditMetricUnit: {
-    fontSize: 10,
-    fontWeight: FONT.regular,
-    color: COLORS.textMuted,
-  },
-  auditMetricSub: {
-    fontSize: 10,
-    color: COLORS.textSub,
-    marginTop: 2,
-  },
-  auditMetricDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: COLORS.border,
-  },
-  auditExplanationBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.sm,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 7,
-    marginTop: 6,
-  },
-  auditExplanationText: {
-    fontSize: 11,
-    color: COLORS.textSub,
-    flex: 1,
-    lineHeight: 16,
-  },
-  auditAdviceBox: {
-    marginTop: 6,
-    gap: 4,
-  },
-  auditAdviceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  auditAdviceText: {
-    fontSize: 11,
-    color: COLORS.text,
-    flex: 1,
-  },
-  auditActionTitle: {
-    fontSize: 12,
-    fontWeight: FONT.semi,
-    color: COLORS.textSub,
-    marginTop: 1,
-  },
-  auditActionBanner: {
-    borderRadius: RADIUS.md,
-    padding: SPACING.sm + 2,
-    borderWidth: 1,
-    marginTop: 4,
-  },
-  auditActionRecText: {
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: FONT.medium,
-  },
-  auditActionSuccess: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-  },
-  auditActionWarning: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-  },
-  auditActionInfo: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
-  },
-  statusPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    alignSelf: 'flex-start',
-  },
-  statusPillText: {
-    fontSize: 10,
-    fontWeight: FONT.bold,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

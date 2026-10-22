@@ -27,7 +27,14 @@
     },
     "owner": "prashiln79",
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#D97706"
+        }
+      ]
     ]
   }
 }

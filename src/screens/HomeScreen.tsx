@@ -6,7 +6,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } 
 import { Ionicons } from "@expo/vector-icons";
 
 import { SolarBill, SystemProfile, CareAssessment } from "../types/solar";
-import { Card, Badge, ProgressBar, LedgerRow } from "../components/ui/UIKit";
+import { Card, Badge, LedgerRow } from "../components/ui/UIKit";
 import { projectSettlement } from "../domain/tariffEngine";
 import { analyzeIntelligentPerformance } from "../domain/intelligentAnalysis";
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from "../constants/theme";
@@ -83,6 +83,41 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 		return chronologicalBills[chronologicalBills.length - 1];
 	}, [chronologicalBills, selectedGraphBillId]);
 
+	// ── Care Next Task Helper (Aligned with CareScreen) ──
+	const careNextTask = useMemo(() => {
+		const isAttentionNeeded =
+			careAssessment.state === "Cleaning recommended" ||
+			careAssessment.state === "Cleaning check recommended" ||
+			careAssessment.state === "Watch";
+		if (isAttentionNeeded) {
+			return {
+				isAttentionNeeded: true,
+				title: "Wash solar panels",
+				dueText: "Due today",
+			};
+		}
+		const daysLeft = 30 - (careAssessment.daysSinceLastClean || 0);
+		if (daysLeft <= 0) {
+			return {
+				isAttentionNeeded: true,
+				title: "Wash solar panels",
+				dueText: "Overdue",
+			};
+		}
+		if (daysLeft <= 14) {
+			return {
+				isAttentionNeeded: false,
+				title: "Wash solar panels",
+				dueText: `Due in ${daysLeft} days`,
+			};
+		}
+		return {
+			isAttentionNeeded: false,
+			title: "Check inverter",
+			dueText: "Due in 14 days",
+		};
+	}, [careAssessment.state, careAssessment.daysSinceLastClean]);
+
 	const bill = bills.length > 0 ? bills[0] : null;
 
 	if (!bill) {
@@ -133,7 +168,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 	const bankedSharePct = energyDistTotal > 0 ? Math.max(0, 100 - homeUsagePct) : 0;
 
 	const displayClosingCredit = bill.closingCreditKwh;
-	const careColor = careAssessment.state === "Good" ? COLORS.success : careAssessment.state === "Watch" ? COLORS.warning : COLORS.danger;
 
 	return (
 		<ScrollView
@@ -408,202 +442,141 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 				</View>
 			</Card>
 
-			{/* ─── 2. Smart Performance Insights ─── */}
+			{/* ─── 2. How Your System Is Doing (Simple for Everyday Users) ─── */}
 			{bills.length > 0 && (
-				<Card
-					title="Smart Insights"
-					subtitle={`Latest status ${smartAnalysis.comparisonPeriod}`}
-					style={styles.cardSpacing}
-					badge={
-						<TouchableOpacity
-							id="btn-view-analysis-header"
-							style={styles.smartViewAllBtn}
-							onPress={onNavigateAnalytics}
-							activeOpacity={0.7}
-						>
-							<Text style={styles.smartViewAllText}>View analysis</Text>
-							<Ionicons name="arrow-forward" size={12} color={COLORS.gold} />
-						</TouchableOpacity>
-					}
-				>
-					<View style={styles.smartContainer}>
-						{/* 2 Status Tiles */}
-						<View style={styles.smartTilesRow}>
-							{/* Tile 1: Electricity Bill */}
-							<View style={styles.smartTile}>
-								<View style={styles.smartTileTop}>
-									<View style={[styles.smartIconBadge, { backgroundColor: "#F1F5F9" }]}>
-										<Ionicons name="receipt-outline" size={14} color={COLORS.text} />
-									</View>
-									<View
-										style={[
-											styles.smartStatusPill,
-											smartAnalysis.billAnalysis.status === "lower"
-												? styles.statusPillGreen
-												: smartAnalysis.billAnalysis.status === "higher"
-												? styles.statusPillRed
-												: styles.statusPillAmber,
-										]}
-									>
-										<Text
-											style={[
-												styles.smartStatusText,
-												smartAnalysis.billAnalysis.status === "lower"
-													? { color: "#059669" }
-													: smartAnalysis.billAnalysis.status === "higher"
-													? { color: "#DC2626" }
-													: { color: "#D97706" },
-											]}
-											numberOfLines={1}
-										>
-											{smartAnalysis.billAnalysis.statusLabel}
-										</Text>
-									</View>
-								</View>
-
-								<Text style={styles.smartTileLabel}>Latest Bill</Text>
-								<View style={styles.smartValRow}>
-									<Text style={styles.smartVal}>
-										₹{Math.round(smartAnalysis.billAnalysis.currentAmount).toLocaleString("en-IN")}
-									</Text>
-									{smartAnalysis.billAnalysis.amountChangePct !== null && (
-										<Text
-											style={[
-												styles.smartChangePct,
-												{
-													color:
-														smartAnalysis.billAnalysis.amountChangePct <= 0
-															? "#059669"
-															: "#DC2626",
-												},
-											]}
-										>
-											{smartAnalysis.billAnalysis.amountChangePct > 0 ? "+" : ""}
-											{smartAnalysis.billAnalysis.amountChangePct}%
-										</Text>
-									)}
-								</View>
-								<Text style={styles.smartTileSub} numberOfLines={2}>
-									{smartAnalysis.billAnalysis.summary}
-								</Text>
-							</View>
-
-							{/* Tile 2: Solar Generation */}
-							<View style={styles.smartTile}>
-								<View style={styles.smartTileTop}>
-									<View style={[styles.smartIconBadge, { backgroundColor: "#FEF3C7" }]}>
-										<Ionicons name="sunny-outline" size={14} color="#D97706" />
-									</View>
-									<View
-										style={[
-											styles.smartStatusPill,
-											smartAnalysis.solarAnalysis.status === "good"
-												? styles.statusPillGreen
-												: smartAnalysis.solarAnalysis.status === "lower"
-												? styles.statusPillRed
-												: styles.statusPillBlue,
-										]}
-									>
-										<Text
-											style={[
-												styles.smartStatusText,
-												smartAnalysis.solarAnalysis.status === "good"
-													? { color: "#059669" }
-													: smartAnalysis.solarAnalysis.status === "lower"
-													? { color: "#DC2626" }
-													: { color: "#0284C7" },
-											]}
-											numberOfLines={1}
-										>
-											{smartAnalysis.solarAnalysis.statusLabel}
-										</Text>
-									</View>
-								</View>
-
-								<Text style={styles.smartTileLabel}>Solar Generation</Text>
-								<View style={styles.smartValRow}>
-									<Text style={[styles.smartVal, { color: "#D97706" }]}>
-										{smartAnalysis.solarAnalysis.currentGenerationKwh !== null
-											? smartAnalysis.solarAnalysis.currentGenerationKwh
-											: "—"}
-									</Text>
-									<Text style={styles.smartUnit}>kWh</Text>
-									{smartAnalysis.solarAnalysis.generationChangePct !== null && (
-										<Text
-											style={[
-												styles.smartChangePct,
-												{
-													color:
-														smartAnalysis.solarAnalysis.generationChangePct >= 0
-															? "#059669"
-															: "#DC2626",
-												},
-											]}
-										>
-											{smartAnalysis.solarAnalysis.generationChangePct > 0 ? "+" : ""}
-											{smartAnalysis.solarAnalysis.generationChangePct}%
-										</Text>
-									)}
-								</View>
-								<Text style={styles.smartTileSub} numberOfLines={2}>
-									{smartAnalysis.solarAnalysis.currentYieldKwhPerKwDay !== null
-										? `${smartAnalysis.solarAnalysis.currentYieldKwhPerKwDay} kWh/kW/day · ${smartAnalysis.solarAnalysis.season === "monsoon" ? "Monsoon" : "Sunny"} target`
-										: smartAnalysis.solarAnalysis.summary}
-								</Text>
-							</View>
+				<View style={styles.smartHeroCard}>
+					{/* Header */}
+					<View style={styles.smartHeroHeader}>
+						<View style={{ flex: 1, paddingRight: 8 }}>
+							<Text style={styles.smartHeroTitle}>How your system is doing</Text>
+							<Text style={styles.smartHeroSubtitle}>
+								Based on your {bill.period || 'latest'} bill and generation
+							</Text>
 						</View>
-
-						{/* Action Guidance Banner */}
-						<TouchableOpacity
-							id="btn-smart-insight-banner"
+						<View
 							style={[
-								styles.smartActionBanner,
-								smartAnalysis.actionCheck.severity === "warning"
-									? styles.smartActionWarning
-									: smartAnalysis.actionCheck.severity === "info"
-									? styles.smartActionInfo
-									: styles.smartActionSuccess,
+								styles.smartHeroHealthBadge,
+								smartAnalysis.actionCheck.severity === 'warning'
+									? styles.healthBadgeWarning
+									: styles.healthBadgeSuccess,
 							]}
-							onPress={onNavigateAnalytics}
-							activeOpacity={0.8}
 						>
 							<Ionicons
 								name={
-									smartAnalysis.actionCheck.severity === "warning"
-										? "alert-circle"
-										: smartAnalysis.actionCheck.severity === "info"
-										? "information-circle"
-										: "checkmark-circle"
+									smartAnalysis.actionCheck.severity === 'warning'
+										? 'alert-circle'
+										: 'checkmark-circle'
 								}
-								size={16}
+								size={14}
 								color={
-									smartAnalysis.actionCheck.severity === "warning"
-										? "#DC2626"
-										: smartAnalysis.actionCheck.severity === "info"
-										? "#2563EB"
-										: "#059669"
+									smartAnalysis.actionCheck.severity === 'warning'
+										? '#DC2626'
+										: '#16A34A'
 								}
 							/>
 							<Text
 								style={[
-									styles.smartActionText,
-									{
-										color:
-											smartAnalysis.actionCheck.severity === "warning"
-												? "#991B1B"
-												: smartAnalysis.actionCheck.severity === "info"
-												? "#1E40AF"
-												: "#065F46",
-									},
+									styles.smartHeroHealthText,
+									smartAnalysis.actionCheck.severity === 'warning'
+										? { color: '#DC2626' }
+										: { color: '#16A34A' },
 								]}
-								numberOfLines={2}
 							>
-								{smartAnalysis.actionCheck.recommendation}
+								{smartAnalysis.actionCheck.severity === 'warning'
+									? 'Attention needed'
+									: 'Looking good'}
 							</Text>
-							<Ionicons name="chevron-forward" size={14} color={COLORS.textMuted} />
+						</View>
+					</View>
+
+					{/* 2 Clean Side-by-Side Metric Cards */}
+					<View style={styles.smartMetricsRow}>
+						{/* Card 1: Electricity bill */}
+						<TouchableOpacity
+							style={styles.smartMetricBox}
+							onPress={onNavigateAnalytics}
+							activeOpacity={0.8}
+						>
+							<View style={styles.smartMetricTop}>
+								<View style={styles.smartBillIcon}>
+									<Ionicons name="document-text" size={15} color="#2563EB" />
+								</View>
+								<Text style={styles.smartMetricLabel}>Electricity bill</Text>
+							</View>
+							<Text style={styles.smartMetricValue}>
+								₹{Math.round(bill.billAmount).toLocaleString('en-IN')}
+							</Text>
+							<View style={styles.smartStatusChip}>
+								<Ionicons name="checkmark" size={11} color="#16A34A" />
+								<Text style={styles.smartStatusChipText}>
+									{smartAnalysis.billAnalysis.statusLabel || 'About normal'}
+								</Text>
+							</View>
+						</TouchableOpacity>
+
+						{/* Card 2: Solar generated */}
+						<TouchableOpacity
+							style={styles.smartMetricBox}
+							onPress={onNavigateAnalytics}
+							activeOpacity={0.8}
+						>
+							<View style={styles.smartMetricTop}>
+								<View style={styles.smartSolarIcon}>
+									<Ionicons name="sunny" size={15} color="#EA580C" />
+								</View>
+								<Text style={styles.smartMetricLabel}>Solar output</Text>
+							</View>
+							<Text style={styles.smartMetricValue}>
+								{bill.generationKwh ?? 0} <Text style={styles.smartMetricUnit}>kWh</Text>
+							</Text>
+							<View style={styles.smartStatusChip}>
+								<Ionicons name="checkmark-circle" size={11} color="#16A34A" />
+								<Text style={styles.smartStatusChipText}>
+									{smartAnalysis.solarAnalysis.status === 'lower' ? 'Below target' : 'Good output'}
+								</Text>
+							</View>
 						</TouchableOpacity>
 					</View>
-				</Card>
+
+					{/* Friendly Recommendation Banner */}
+					<TouchableOpacity
+						id="btn-smart-insight-banner"
+						style={[
+							styles.smartFriendlyBanner,
+							smartAnalysis.actionCheck.severity === 'warning'
+								? styles.friendlyBannerWarning
+								: styles.friendlyBannerSuccess,
+						]}
+						onPress={onNavigateAnalytics}
+						activeOpacity={0.8}
+					>
+						<Ionicons
+							name={
+								smartAnalysis.actionCheck.severity === 'warning'
+									? 'alert-circle'
+									: 'checkmark-circle'
+							}
+							size={16}
+							color={
+								smartAnalysis.actionCheck.severity === 'warning'
+									? '#DC2626'
+									: '#16A34A'
+							}
+						/>
+						<Text
+							style={[
+								styles.smartFriendlyText,
+								smartAnalysis.actionCheck.severity === 'warning'
+									? { color: '#991B1B' }
+									: { color: '#166534' },
+							]}
+							numberOfLines={2}
+						>
+							{smartAnalysis.actionCheck.recommendation}
+						</Text>
+						<Ionicons name="chevron-forward" size={15} color="#94A3B8" />
+					</TouchableOpacity>
+				</View>
 			)}
 
 			{/* ─── 3. Generation Graph ─── */}
@@ -713,40 +686,91 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 				</Card>
 			)}
 
-			{/* ─── 3. Panel Care ─── */}
-			<Card
-				title="Panel Care"
-				subtitle={`Last cleaned: ${profile.lastCleanedDate ?? "Not recorded"}`}
-				style={styles.cardSpacing}
-				badge={<Badge label={careAssessment.state} color={careColor} />}
-			>
-				<View style={styles.careContainer}>
-					<Text style={styles.careRationale}>{careAssessment.rationale}</Text>
-					{careAssessment.recommendation ? (
-						<Text style={styles.careRecommendation}>{careAssessment.recommendation}</Text>
-					) : null}
+			{/* ─── 3. Solar Care (Aligned with CareScreen) ─── */}
+			<View style={styles.careHeroCard}>
+				{/* Top Row: Title & Link */}
+				<View style={styles.careHeaderRow}>
+					<View style={{ flex: 1, paddingRight: 8 }}>
+						<Text style={styles.careCardTitle}>Solar Care</Text>
+						<Text style={styles.careCardSubtitle}>Keep your solar system in good shape</Text>
+					</View>
+					<TouchableOpacity
+						id="btn-view-care"
+						style={styles.careReportPillBtn}
+						onPress={onNavigateCare}
+						activeOpacity={0.7}
+					>
+						<Text style={styles.careReportPillText}>Full report</Text>
+						<Ionicons name="arrow-forward" size={12} color="#EA580C" />
+					</TouchableOpacity>
+				</View>
 
-					<ProgressBar value={100 - careAssessment.score} color={careColor} height={7} style={{ marginTop: SPACING.xs }} />
-
-					<View style={styles.progressLabels}>
-						<Text style={styles.progressLabel}>Clean</Text>
-						<Text style={[styles.progressLabel, { color: careColor, fontWeight: FONT.semi }]}>
-							{100 - careAssessment.score}% health
-						</Text>
-						<Text style={styles.progressLabel}>Needs Wash</Text>
+				{/* 2-Column Split Status Box */}
+				<View
+					style={[
+						styles.careSplitBox,
+						careNextTask.isAttentionNeeded && styles.careSplitBoxWarning,
+					]}
+				>
+					{/* Left Column: Status */}
+					<View style={styles.careStatusLeft}>
+						<Ionicons
+							name={careNextTask.isAttentionNeeded ? "alert-circle" : "checkmark-circle"}
+							size={32}
+							color={careNextTask.isAttentionNeeded ? "#EF4444" : "#13A956"}
+						/>
+						<View style={styles.careStatusTextCol}>
+							<Text
+								style={[
+									styles.careStatusTitle,
+									careNextTask.isAttentionNeeded ? styles.careTitleDanger : styles.careTitleSuccess,
+								]}
+							>
+								{careNextTask.isAttentionNeeded ? "Attention needed" : "System looks good"}
+							</Text>
+							<Text style={styles.careStatusSub} numberOfLines={1}>
+								{careNextTask.isAttentionNeeded
+									? careAssessment.recommendation || "Wash recommended."
+									: "No tasks due today."}
+							</Text>
+						</View>
 					</View>
 
-					<View style={styles.careActions}>
-						<TouchableOpacity id="btn-log-clean-home" style={styles.logCleanBtn} onPress={onLogClean} activeOpacity={0.8}>
-							<Ionicons name="water-outline" size={16} color={COLORS.textInverse} />
-							<Text style={styles.logCleanText}>Log Panel Wash</Text>
-						</TouchableOpacity>
-						<TouchableOpacity id="btn-view-care" style={styles.viewCareBtn} onPress={onNavigateCare}>
-							<Text style={styles.viewCareText}>Full Report →</Text>
-						</TouchableOpacity>
+					{/* Right Column: Next Task */}
+					<View style={styles.careStatusRight}>
+						<View style={styles.careNextTaskCol}>
+							<Text style={styles.careNextTaskLabel}>Next task</Text>
+							<Text style={styles.careNextTaskTitle} numberOfLines={1}>
+								{careNextTask.title}
+							</Text>
+							<Text style={styles.careNextTaskDue} numberOfLines={1}>
+								{careNextTask.dueText}
+							</Text>
+						</View>
 					</View>
 				</View>
-			</Card>
+
+				{/* Action Buttons */}
+				<View style={styles.careActionRow}>
+					<TouchableOpacity
+						id="btn-log-clean-home"
+						style={styles.carePrimaryActionBtn}
+						onPress={onLogClean}
+						activeOpacity={0.8}
+					>
+						<Ionicons name="water-outline" size={16} color="#FFFFFF" />
+						<Text style={styles.carePrimaryActionText}>Log Panel Wash</Text>
+					</TouchableOpacity>
+					<TouchableOpacity
+						style={styles.careSecondaryActionBtn}
+						onPress={onNavigateCare}
+						activeOpacity={0.8}
+					>
+						<Ionicons name="calendar-outline" size={15} color="#64748B" />
+						<Text style={styles.careSecondaryActionText}>Care Schedule</Text>
+					</TouchableOpacity>
+				</View>
+			</View>
 
 			{/* ─── 4. Banked Credit & Annual Settlement ─── */}
 			<Card
@@ -1270,63 +1294,152 @@ const styles = StyleSheet.create({
 		color: "#059669",
 	},
 
-	// ── Panel Care ──────────────────────────────────────────────
-	careContainer: {
-		gap: SPACING.xs,
+	// ── Solar Care (Aligned with CareScreen) ────────────────────
+	careHeroCard: {
+		backgroundColor: "#FFFFFF",
+		borderRadius: 16,
+		borderWidth: 1,
+		borderColor: "#E2E8F0",
+		padding: 16,
+		marginBottom: 16,
+		...SHADOW.card,
 	},
-	careRationale: {
-		fontSize: 13,
-		color: COLORS.textSub,
-		lineHeight: 19,
-	},
-	careRecommendation: {
-		fontSize: 12,
-		color: COLORS.textMuted,
-		lineHeight: 18,
-		fontStyle: "italic",
-	},
-	progressLabels: {
+	careHeaderRow: {
 		flexDirection: "row",
+		alignItems: "center",
 		justifyContent: "space-between",
-		marginTop: 4,
+		marginBottom: 12,
 	},
-	progressLabel: {
-		fontSize: 11,
-		color: COLORS.textMuted,
+	careCardTitle: {
+		fontSize: 16,
+		fontWeight: "700",
+		color: "#0F172A",
+		letterSpacing: -0.2,
 	},
-	careActions: {
+	careCardSubtitle: {
+		fontSize: 12,
+		color: "#64748B",
+		marginTop: 2,
+	},
+	careReportPillBtn: {
 		flexDirection: "row",
-		gap: SPACING.sm,
-		marginTop: SPACING.sm + 2,
+		alignItems: "center",
+		gap: 4,
+		backgroundColor: "#FFF7ED",
+		borderWidth: 1,
+		borderColor: "#FED7AA",
+		borderRadius: 20,
+		paddingHorizontal: 10,
+		paddingVertical: 5,
 	},
-	logCleanBtn: {
+	careReportPillText: {
+		fontSize: 12,
+		fontWeight: "600",
+		color: "#EA580C",
+	},
+	careSplitBox: {
+		flexDirection: "row",
+		alignItems: "center",
+		backgroundColor: "#E8FDF0",
+		borderRadius: 14,
+		paddingHorizontal: 12,
+		paddingVertical: 12,
+		borderWidth: 1,
+		borderColor: "#DCFCE7",
+	},
+	careSplitBoxWarning: {
+		backgroundColor: "#FEF2F2",
+		borderColor: "#FECACA",
+	},
+	careStatusLeft: {
+		flex: 0.6,
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 10,
+	},
+	careStatusTextCol: {
+		flex: 1,
+	},
+	careStatusTitle: {
+		fontSize: 14,
+		fontWeight: "700",
+		letterSpacing: -0.2,
+	},
+	careTitleSuccess: {
+		color: "#0E9E4E",
+	},
+	careTitleDanger: {
+		color: "#DC2626",
+	},
+	careStatusSub: {
+		fontSize: 11.5,
+		color: "#64748B",
+		marginTop: 2,
+	},
+	careStatusRight: {
+		flex: 0.4,
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "flex-end",
+	},
+	careNextTaskCol: {
+		alignItems: "flex-end",
+	},
+	careNextTaskLabel: {
+		fontSize: 11,
+		color: "#94A3B8",
+		fontWeight: "500",
+		textAlign: "right",
+	},
+	careNextTaskTitle: {
+		fontSize: 13.5,
+		fontWeight: "700",
+		color: "#0F172A",
+		marginTop: 1,
+		textAlign: "right",
+	},
+	careNextTaskDue: {
+		fontSize: 11.5,
+		color: "#64748B",
+		marginTop: 1,
+		textAlign: "right",
+	},
+	careActionRow: {
+		flexDirection: "row",
+		gap: 10,
+		marginTop: 12,
+	},
+	carePrimaryActionBtn: {
 		flex: 1,
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 6,
-		backgroundColor: COLORS.gold,
+		backgroundColor: "#0cbaeaff",
+		borderRadius: 12,
 		paddingVertical: 11,
-		borderRadius: RADIUS.md,
 	},
-	logCleanText: {
+	carePrimaryActionText: {
 		fontSize: 13,
-		fontWeight: FONT.bold,
-		color: COLORS.textInverse,
+		fontWeight: "700",
+		color: "#FFFFFF",
 	},
-	viewCareBtn: {
-		paddingHorizontal: 14,
-		justifyContent: "center",
+	careSecondaryActionBtn: {
+		flex: 1,
+		flexDirection: "row",
 		alignItems: "center",
-		borderRadius: RADIUS.md,
+		justifyContent: "center",
+		gap: 6,
+		backgroundColor: "#FFFFFF",
 		borderWidth: 1,
-		borderColor: COLORS.border,
-		backgroundColor: COLORS.card,
+		borderColor: "#CBD5E1",
+		borderRadius: 12,
+		paddingVertical: 11,
 	},
-	viewCareText: {
+	careSecondaryActionText: {
 		fontSize: 13,
-		color: COLORS.textSub,
-		fontWeight: FONT.semi,
+		fontWeight: "600",
+		color: "#0F172A",
 	},
 
 	// ── Banked Credit & Annual Settlement ───────────────────────
@@ -1482,133 +1595,144 @@ const styles = StyleSheet.create({
 		color: COLORS.textInverse,
 	},
 
-	// ── Smart Insights Card Styles ──────────────────────────────
-	smartViewAllBtn: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 3,
-		backgroundColor: COLORS.glowGold,
+	// ── Smart Performance Insights (Simple for Everyday Users) ──
+	smartHeroCard: {
+		backgroundColor: "#FFFFFF",
+		borderRadius: 16,
 		borderWidth: 1,
-		borderColor: `${COLORS.gold}44`,
-		paddingHorizontal: 8,
-		paddingVertical: 3,
-		borderRadius: RADIUS.full,
+		borderColor: "#E2E8F0",
+		padding: 16,
+		marginBottom: 16,
+		...SHADOW.card,
 	},
-	smartViewAllText: {
-		fontSize: 11,
-		fontWeight: FONT.bold,
-		color: COLORS.gold,
-	},
-	smartContainer: {
-		gap: SPACING.sm,
-	},
-	smartTilesRow: {
-		flexDirection: "row",
-		gap: SPACING.sm,
-	},
-	smartTile: {
-		flex: 1,
-		backgroundColor: COLORS.surfaceRaised,
-		borderRadius: RADIUS.md,
-		borderWidth: 1,
-		borderColor: COLORS.border,
-		padding: SPACING.sm + 2,
-	},
-	smartTileTop: {
+	smartHeroHeader: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
-		marginBottom: 6,
+		marginBottom: 14,
 	},
-	smartIconBadge: {
-		width: 24,
-		height: 24,
-		borderRadius: 12,
+	smartHeroTitle: {
+		fontSize: 16,
+		fontWeight: "700",
+		color: "#0F172A",
+		letterSpacing: -0.2,
+	},
+	smartHeroSubtitle: {
+		fontSize: 12,
+		color: "#64748B",
+		marginTop: 2,
+	},
+	smartHeroHealthBadge: {
+		flexDirection: "row",
 		alignItems: "center",
-		justifyContent: "center",
-	},
-	smartStatusPill: {
-		paddingHorizontal: 6,
-		paddingVertical: 2,
-		borderRadius: RADIUS.full,
+		gap: 4,
+		paddingHorizontal: 8,
+		paddingVertical: 4,
+		borderRadius: 20,
 		borderWidth: 1,
 	},
-	smartStatusText: {
-		fontSize: 9,
-		fontWeight: FONT.bold,
-	},
-	statusPillGreen: {
+	healthBadgeSuccess: {
 		backgroundColor: "#ECFDF5",
 		borderColor: "#A7F3D0",
 	},
-	statusPillRed: {
+	healthBadgeWarning: {
 		backgroundColor: "#FEF2F2",
 		borderColor: "#FECACA",
 	},
-	statusPillAmber: {
-		backgroundColor: "#FEF3C7",
-		borderColor: "#FDE68A",
+	smartHeroHealthText: {
+		fontSize: 11.5,
+		fontWeight: "700",
 	},
-	statusPillBlue: {
-		backgroundColor: "#E0F2FE",
-		borderColor: "#BAE6FD",
-	},
-	smartTileLabel: {
-		fontSize: 11,
-		color: COLORS.textMuted,
-		fontWeight: FONT.semi,
-	},
-	smartValRow: {
+	smartMetricsRow: {
 		flexDirection: "row",
-		alignItems: "baseline",
-		gap: 4,
-		marginVertical: 2,
+		gap: 10,
+		marginBottom: 12,
 	},
-	smartVal: {
-		fontSize: 16,
-		fontWeight: FONT.bold,
-		color: COLORS.text,
+	smartMetricBox: {
+		flex: 1,
+		backgroundColor: "#F8FAFC",
+		borderRadius: 14,
+		borderWidth: 1,
+		borderColor: "#E2E8F0",
+		padding: 12,
 	},
-	smartUnit: {
-		fontSize: 10,
-		color: COLORS.textMuted,
-	},
-	smartChangePct: {
-		fontSize: 11,
-		fontWeight: FONT.bold,
-		marginLeft: "auto",
-	},
-	smartTileSub: {
-		fontSize: 10,
-		color: COLORS.textSub,
-		lineHeight: 14,
-		marginTop: 2,
-	},
-	smartActionBanner: {
+	smartMetricTop: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: 8,
-		paddingVertical: 8,
-		paddingHorizontal: 10,
-		borderRadius: RADIUS.md,
+		marginBottom: 6,
+	},
+	smartBillIcon: {
+		width: 28,
+		height: 28,
+		borderRadius: 8,
+		backgroundColor: "#EFF6FF",
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	smartSolarIcon: {
+		width: 28,
+		height: 28,
+		borderRadius: 8,
+		backgroundColor: "#FFF7ED",
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	smartMetricLabel: {
+		fontSize: 12,
+		color: "#64748B",
+		fontWeight: "600",
+	},
+	smartMetricValue: {
+		fontSize: 20,
+		fontWeight: "800",
+		color: "#0F172A",
+		letterSpacing: -0.3,
+		marginBottom: 6,
+	},
+	smartMetricUnit: {
+		fontSize: 13,
+		fontWeight: "600",
+		color: "#64748B",
+	},
+	smartStatusChip: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 4,
+		backgroundColor: "#FFFFFF",
+		borderWidth: 1,
+		borderColor: "#E2E8F0",
+		borderRadius: 12,
+		paddingHorizontal: 7,
+		paddingVertical: 3,
+		alignSelf: "flex-start",
+	},
+	smartStatusChipText: {
+		fontSize: 11,
+		fontWeight: "600",
+		color: "#0F172A",
+	},
+	smartFriendlyBanner: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 8,
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		borderRadius: 12,
 		borderWidth: 1,
 	},
-	smartActionWarning: {
+	friendlyBannerSuccess: {
+		backgroundColor: "#F0FDF4",
+		borderColor: "#DCFCE7",
+	},
+	friendlyBannerWarning: {
 		backgroundColor: "#FEF2F2",
 		borderColor: "#FECACA",
 	},
-	smartActionInfo: {
-		backgroundColor: "#EFF6FF",
-		borderColor: "#BFDBFE",
-	},
-	smartActionSuccess: {
-		backgroundColor: "#ECFDF5",
-		borderColor: "#A7F3D0",
-	},
-	smartActionText: {
-		fontSize: 11,
-		fontWeight: FONT.medium,
+	smartFriendlyText: {
 		flex: 1,
-		lineHeight: 15,
+		fontSize: 12,
+		fontWeight: "500",
+		lineHeight: 16,
 	},
 });

@@ -1,14 +1,13 @@
 // ============================================================
-// Solar Care Screen — Simple, Human-Centric Maintenance Checklist
-// Adheres to 5 Rules:
-// 1. Show only important tasks (panel cleaning, inverter check, roof inspection)
-// 2. Use everyday language
-// 3. Show one clear date ("Due in 3 days" / "Overdue by 2 days")
-// 4. Easy completion (1-tap complete, auto-reschedules next task)
-// 5. Hide technical details (collapsible recent history)
+// Solar Care Screen — Human-Centric Maintenance Checklist
+// Matches exact UI/UX design:
+// - Two-column Hero Card (System Status + Next Task)
+// - Upcoming Maintenance Checklist with urgency highlights & "Mark done"
+// - Collapsible "View maintenance history"
+// - Real Android local notifications via expo-notifications
 // ============================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,10 +22,16 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CareAssessment, CleaningEvent, SystemProfile } from '../types/solar';
-import { Card } from '../components/ui/UIKit';
 import { DateField } from '../components/ui/DatePickerModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
+import {
+  getRemindersEnabledAsync,
+  cancelAllCareNotificationsAsync,
+  syncCareNotificationsAsync,
+  setupNotificationChannelAsync,
+  ScheduleTaskInput,
+} from '../services/notificationService';
 
 interface CareScreenProps {
   careAssessment: CareAssessment;
@@ -35,6 +40,7 @@ interface CareScreenProps {
   onLogClean: () => void;
   onSaveClean?: (event: CleaningEvent) => Promise<void> | void;
   onDeleteClean?: (eventId: string) => Promise<void> | void;
+  onNavigateSettings?: () => void;
 }
 
 interface MaintenanceTask {
@@ -50,33 +56,33 @@ interface MaintenanceTask {
 
 const DEFAULT_TASKS: MaintenanceTask[] = [
   {
-    id: 'task-clean',
-    title: 'Clean solar panels',
-    description: 'Remove dust and dirt to restore energy output',
-    frequencyDays: 30, // 30-day recommended cycle for Goa
-    icon: 'water',
-    iconBg: '#FEF3C7',
-    iconColor: '#D97706',
-    providerTag: 'Panel wash',
-  },
-  {
     id: 'task-inverter',
     title: 'Check inverter',
-    description: 'Check for green normal light and error codes on screen',
+    description: 'Check for warning lights on inverter',
     frequencyDays: 60,
     icon: 'flash',
-    iconBg: '#EFF6FF',
-    iconColor: '#2563EB',
+    iconBg: '#FEF3C7',
+    iconColor: '#F59E0B',
     providerTag: 'Inverter check',
+  },
+  {
+  id: 'task-clean',
+  title: 'Clean solar panels',
+  description: 'Remove dust and bird droppings',
+  frequencyDays: 30,
+  icon: 'water',
+  iconBg: '#DBEAFE',
+  iconColor: '#46befaff',
+  providerTag: 'Panel wash',
   },
   {
     id: 'task-roof',
     title: 'Visual roof inspection',
-    description: 'Check panel mounting brackets, rust & loose wires',
+    description: 'Check panel mounting brackets, rust and loose wires from a safe location',
     frequencyDays: 180,
     icon: 'shield-checkmark',
-    iconBg: '#ECFDF5',
-    iconColor: '#059669',
+    iconBg: '#DCFCE7',
+    iconColor: '#16A34A',
     providerTag: 'Roof inspection',
   },
 ];
@@ -104,6 +110,39 @@ function formatFriendlyDate(ymd: string): string {
   }
 }
 
+function formatDueSummary(diffDays: number, dateStr: string): string {
+  if (!dateStr) return 'Not scheduled';
+  try {
+    const d = parseDate(dateStr);
+    const nowYear = new Date().getFullYear();
+    const dateYear = d.getFullYear();
+    const showYear = dateYear !== nowYear;
+    const dayMonth = d.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: showYear ? 'numeric' : undefined,
+    });
+
+    if (diffDays < 0) {
+      const daysPast = Math.abs(diffDays);
+      return `Overdue by ${daysPast} day${daysPast === 1 ? '' : 's'} (${dayMonth})`;
+    }
+    if (diffDays === 0) {
+      return `Due today (${dayMonth})`;
+    }
+    if (diffDays === 1) {
+      return `Due tomorrow (${dayMonth})`;
+    }
+    if (diffDays < 30) {
+      return `Due in ${diffDays} days (${dayMonth})`;
+    }
+    const months = Math.max(1, Math.round(diffDays / 30.5));
+    return `Due in ${months} month${months === 1 ? '' : 's'} (${dayMonth})`;
+  } catch {
+    return `Due in ${diffDays} days`;
+  }
+}
+
 export const CareScreen: React.FC<CareScreenProps> = ({
   careAssessment,
   cleaningEvents,
@@ -111,11 +150,12 @@ export const CareScreen: React.FC<CareScreenProps> = ({
   onLogClean,
   onSaveClean,
   onDeleteClean,
+  onNavigateSettings,
 }) => {
   const insets = useSafeAreaInsets();
   const todayYMD = useMemo(() => formatDateYMD(new Date()), []);
 
-  // Notifications enabled state (local preference)
+  // Notifications enabled state (loaded from AsyncStorage)
   const [remindersEnabled, setRemindersEnabled] = useState(true);
 
   // History expansion state
@@ -127,9 +167,24 @@ export const CareScreen: React.FC<CareScreenProps> = ({
   const [completionNotes, setCompletionNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ── Calculate due status for each task ──────────────────────
+  // Load saved reminder preference and setup notification channel on mount
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      await setupNotificationChannelAsync();
+      const enabled = await getRemindersEnabledAsync();
+      if (isMounted) {
+        setRemindersEnabled(enabled);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // ── Calculate due status for each task (Sorted by urgency) ──
   const tasksWithSchedule = useMemo(() => {
-    return DEFAULT_TASKS.map((task) => {
+    const list = DEFAULT_TASKS.map((task) => {
       // Find latest completed event matching this task
       let lastCompletedDate: string | null = null;
 
@@ -151,49 +206,60 @@ export const CareScreen: React.FC<CareScreenProps> = ({
       } else {
         // If never completed, default to frequency from today
         const now = new Date();
-        nextDueDate = new Date(now.getTime() + (task.id === 'task-clean' ? 3 : 14) * 86400000);
+        nextDueDate = new Date(
+          now.getTime() +
+            (task.id === 'task-clean' ? 24 : task.id === 'task-inverter' ? 14 : 60) * 86400000
+        );
       }
 
       const nextDueDateStr = formatDateYMD(nextDueDate);
       const diffMs = nextDueDate.getTime() - new Date().setHours(0, 0, 0, 0);
       const diffDays = Math.round(diffMs / 86400000);
 
-      let dueText = '';
+      const dueText = formatDueSummary(diffDays, nextDueDateStr);
       let dueSeverity: 'normal' | 'soon' | 'overdue' = 'normal';
 
       if (diffDays < 0) {
-        const daysPast = Math.abs(diffDays);
-        dueText = `Overdue by ${daysPast} day${daysPast === 1 ? '' : 's'}`;
         dueSeverity = 'overdue';
-      } else if (diffDays === 0) {
-        dueText = 'Due today';
+      } else if (diffDays <= 14) {
         dueSeverity = 'soon';
-      } else if (diffDays <= 7) {
-        dueText = `Due in ${diffDays} day${diffDays === 1 ? '' : 's'}`;
-        dueSeverity = 'soon';
-      } else {
-        dueText = `Due in ${diffDays} days (${formatFriendlyDate(nextDueDateStr)})`;
-        dueSeverity = 'normal';
       }
 
       return {
         ...task,
         lastCompletedDate,
+        nextDueDate,
         nextDueDateStr,
         diffDays,
         dueText,
         dueSeverity,
       };
     });
+
+    // Sort ascending by diffDays so nearest task appears first
+    return list.sort((a, b) => a.diffDays - b.diffDays);
   }, [cleaningEvents, profile.lastCleanedDate]);
 
   // Overall system summary status
   const overdueTasks = tasksWithSchedule.filter((t) => t.dueSeverity === 'overdue');
-  const soonTasks = tasksWithSchedule.filter((t) => t.dueSeverity === 'soon');
-  const nextTask = [...tasksWithSchedule].sort((a, b) => a.diffDays - b.diffDays)[0];
+  const nextTask = tasksWithSchedule[0] || null;
 
-  // Most recent completed maintenance event
-  const mostRecentEvent = cleaningEvents.length > 0 ? cleaningEvents[0] : null;
+  // ── Sync Android OS System Notifications ─────────────────────
+  useEffect(() => {
+    if (remindersEnabled) {
+      const inputs: ScheduleTaskInput[] = tasksWithSchedule.map((t) => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        dueDate: t.nextDueDate,
+      }));
+      syncCareNotificationsAsync(inputs).catch((err) => {
+        console.warn('Failed to sync care notifications:', err);
+      });
+    } else {
+      cancelAllCareNotificationsAsync().catch(() => {});
+    }
+  }, [remindersEnabled, tasksWithSchedule]);
 
   // ── Handle Task Completion ──────────────────────────────────
   const handleOpenCompleteModal = (task: MaintenanceTask) => {
@@ -220,7 +286,9 @@ export const CareScreen: React.FC<CareScreenProps> = ({
         await onSaveClean(newEvent);
       }
 
-      const nextDate = new Date(parseDate(newEvent.date).getTime() + completingTask.frequencyDays * 86400000);
+      const nextDate = new Date(
+        parseDate(newEvent.date).getTime() + completingTask.frequencyDays * 86400000
+      );
       const formattedNext = formatFriendlyDate(formatDateYMD(nextDate));
 
       setIsSubmitting(false);
@@ -234,17 +302,6 @@ export const CareScreen: React.FC<CareScreenProps> = ({
       setIsSubmitting(false);
       Alert.alert('Save Failed', e?.message || 'Could not record task completion.');
     }
-  };
-
-  const handleToggleReminders = () => {
-    const nextState = !remindersEnabled;
-    setRemindersEnabled(nextState);
-    Alert.alert(
-      nextState ? 'Reminders Turned On' : 'Reminders Muted',
-      nextState
-        ? 'You will receive gentle notifications when panel care is due.'
-        : 'Maintenance reminder notifications are now turned off.'
-    );
   };
 
   const confirmDelete = (event: CleaningEvent) => {
@@ -269,114 +326,117 @@ export const CareScreen: React.FC<CareScreenProps> = ({
     ]);
   };
 
+  const isOverdue = overdueTasks.length > 0;
+
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Solar Care Status Card ── */}
-      <Card
-        title="Solar Care"
-        subtitle="Keep your solar system in good shape"
-        style={styles.heroCard}
-        badge={
+      {/* ── Solar Care Status Hero Card (2-Column Split) ── */}
+      <View style={styles.heroCard}>
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroTitleCol}>
+            <Text style={styles.heroTitle}>Solar Care</Text>
+            <Text style={styles.heroSub}>Keep your solar system in good shape</Text>
+          </View>
+
           <TouchableOpacity
-            id="btn-toggle-care-reminders"
-            style={[styles.bellBtn, remindersEnabled && styles.bellBtnActive]}
-            onPress={handleToggleReminders}
+            id="btn-care-settings"
+            style={styles.gearBtn}
+            onPress={onNavigateSettings || (() => {})}
             activeOpacity={0.7}
           >
             <Ionicons
-              name={remindersEnabled ? 'notifications' : 'notifications-off-outline'}
-              size={17}
-              color={remindersEnabled ? COLORS.gold : COLORS.textMuted}
+              name="settings-outline"
+              size={18}
+              color="#64748B"
             />
           </TouchableOpacity>
-        }
-      >
-        <View
-          style={[
-            styles.statusHero,
-            overdueTasks.length > 0
-              ? styles.statusHeroOverdue
-              : soonTasks.length > 0
-              ? styles.statusHeroSoon
-              : styles.statusHeroCaughtUp,
-          ]}
-        >
-          <View style={styles.statusHeroIconBox}>
+        </View>
+
+        {/* 2-column split status banner */}
+        <View style={styles.heroSplitBox}>
+          {/* Left Column: System Status */}
+          <View style={styles.heroStatusLeft}>
             <Ionicons
-              name={
-                overdueTasks.length > 0
-                  ? 'alert-circle'
-                  : soonTasks.length > 0
-                  ? 'time'
-                  : 'checkmark-circle'
-              }
-              size={22}
-              color={
-                overdueTasks.length > 0
-                  ? COLORS.danger
-                  : soonTasks.length > 0
-                  ? COLORS.warning
-                  : COLORS.success
-              }
+              name={isOverdue ? 'alert-circle' : 'checkmark-circle'}
+              size={34}
+              color={isOverdue ? '#EF4444' : '#13A956'}
             />
+
+            <View style={styles.systemStatusTextCol}>
+              <Text
+                style={[
+                  styles.systemStatusTitle,
+                  isOverdue ? styles.statusTitleDanger : styles.statusTitleSuccess,
+                ]}
+              >
+                {isOverdue ? 'Attention needed' : 'System looks good'}
+              </Text>
+              <Text style={styles.systemStatusSub}>
+                {isOverdue
+                  ? `${overdueTasks.length} task overdue.`
+                  : 'No tasks due today.'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.statusHeroTextCol}>
-            <Text style={styles.statusHeroTitle}>
-              {overdueTasks.length > 0
-                ? 'Maintenance overdue'
-                : soonTasks.length > 0
-                ? 'Maintenance coming up'
-                : "You're all caught up!"}
-            </Text>
-            <Text style={styles.statusHeroSub}>
-              {overdueTasks.length > 0
-                ? `${overdueTasks[0].title} is ${overdueTasks[0].dueText.toLowerCase()}.`
-                : soonTasks.length > 0
-                ? `${soonTasks[0].title} is ${soonTasks[0].dueText.toLowerCase()}.`
-                : `Your next maintenance task is ${nextTask?.title.toLowerCase()} (${nextTask?.dueText.toLowerCase()}).`}
-            </Text>
+
+          {/* Right Column: Next Task */}
+          <View style={styles.heroStatusRight}>
+            {/* <Ionicons name="calendar-outline" size={24} color="#64748B" /> */}
+            <View style={styles.nextTaskTextCol}>
+              <Text style={styles.nextTaskLabel}>Next task</Text>
+              <Text style={styles.nextTaskTitle} numberOfLines={1}>
+                {nextTask ? nextTask.title : 'All caught up'}
+              </Text>
+              <Text style={styles.nextTaskDue} numberOfLines={1}>
+                {nextTask ? nextTask.dueText : 'No tasks scheduled'}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* ── Separate Generation Alert (Shown ONLY when attention needed) ── */}
+        {/* Optional Generation Dip Alert if needed */}
         {careAssessment.state.includes('recommended') && !careAssessment.weatherExplained && (
           <View style={styles.generationAlert}>
             <View style={styles.generationAlertHeader}>
-              <Ionicons name="flash-outline" size={15} color={COLORS.danger} />
+              <Ionicons name="flash-outline" size={14} color={COLORS.danger} />
               <Text style={styles.generationAlertTitle}>Generation Dip Detected</Text>
             </View>
             <Text style={styles.generationAlertText}>
-              Your daily solar output dropped below seasonal expected averages in Goa. A panel wash or inverter check will help recover full generation.
+              Daily solar output dropped below seasonal expected averages in Goa. A panel wash or inverter check will help recover full generation.
             </Text>
           </View>
         )}
-      </Card>
+      </View>
 
-      {/* ── Section Title: Your Maintenance Checklist ── */}
+      {/* ── Section Title: Upcoming maintenance ── */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Your maintenance</Text>
+        <Text style={styles.sectionTitle}>Upcoming maintenance</Text>
         <Text style={styles.sectionBadge}>
-          {overdueTasks.length > 0
-            ? `${overdueTasks.length} overdue`
-            : `${tasksWithSchedule.length} upcoming`}
+          {`${tasksWithSchedule.length} tasks`}
         </Text>
       </View>
 
-      {/* ── Task Cards (Simple, clear, 3-4 tasks) ── */}
+      {/* ── Task Cards List ── */}
       <View style={styles.taskList}>
-        {tasksWithSchedule.map((task) => {
-          const isOverdue = task.dueSeverity === 'overdue';
-          const isSoon = task.dueSeverity === 'soon';
+        {tasksWithSchedule.map((task, index) => {
+          const isFirstOrUrgent =
+            index === 0 || task.dueSeverity === 'overdue' || task.dueSeverity === 'soon';
 
           return (
-            <View key={task.id} style={styles.taskCard}>
+            <View
+              key={task.id}
+              style={[
+                styles.taskCard,
+                isFirstOrUrgent ? styles.taskCardHighlighted : styles.taskCardNormal,
+              ]}
+            >
               <View style={styles.taskTopRow}>
                 <View style={[styles.taskIconBox, { backgroundColor: task.iconBg }]}>
-                  <Ionicons name={task.icon} size={20} color={task.iconColor} />
+                  <Ionicons name={task.icon} size={22} color={task.iconColor} />
                 </View>
 
                 <View style={styles.taskInfoCol}>
@@ -385,24 +445,14 @@ export const CareScreen: React.FC<CareScreenProps> = ({
 
                   <View style={styles.dueBadgeRow}>
                     <Ionicons
-                      name={isOverdue ? 'alert-circle' : isSoon ? 'time-outline' : 'calendar-outline'}
-                      size={13}
-                      color={
-                        isOverdue
-                          ? COLORS.danger
-                          : isSoon
-                          ? '#D97706'
-                          : COLORS.textMuted
-                      }
+                      name="calendar-outline"
+                      size={14}
+                      color={isFirstOrUrgent ? '#F59E0B' : '#94A3B8'}
                     />
                     <Text
                       style={[
                         styles.dueText,
-                        isOverdue
-                          ? styles.dueTextOverdue
-                          : isSoon
-                          ? styles.dueTextSoon
-                          : styles.dueTextNormal,
+                        isFirstOrUrgent ? styles.dueTextUrgent : styles.dueTextMuted,
                       ]}
                     >
                       {task.dueText}
@@ -411,48 +461,53 @@ export const CareScreen: React.FC<CareScreenProps> = ({
                 </View>
 
                 <View style={styles.taskChevronBox}>
-                  <Ionicons name="chevron-forward" size={18} color={COLORS.border} />
+                  <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
                 </View>
               </View>
 
-              {/* Action Button: 1-Tap Complete */}
+              {/* Action Button: Mark done */}
               <TouchableOpacity
                 id={`btn-complete-${task.id}`}
-                style={styles.completeBtn}
+                style={[
+                  styles.markDoneBtn,
+                  isFirstOrUrgent ? styles.markDoneBtnUrgent : styles.markDoneBtnNormal,
+                ]}
                 onPress={() => handleOpenCompleteModal(task)}
                 activeOpacity={0.7}
               >
-                <Ionicons name="checkmark" size={16} color={COLORS.text} />
-                <Text style={styles.completeBtnText}>Mark as completed</Text>
+                <Ionicons
+                  name="checkmark"
+                  size={16}
+                  color={isFirstOrUrgent ? '#EA580C' : '#0F172A'}
+                />
+                <Text
+                  style={[
+                    styles.markDoneBtnText,
+                    isFirstOrUrgent ? styles.markDoneBtnTextUrgent : styles.markDoneBtnTextNormal,
+                  ]}
+                >
+                  Mark done
+                </Text>
               </TouchableOpacity>
             </View>
           );
         })}
       </View>
 
-      {/* ── Recently Completed (Collapsible History) ── */}
+      {/* ── View Maintenance History (Collapsible) ── */}
       <View style={styles.recentSection}>
         <TouchableOpacity
           id="btn-toggle-recent-history"
-          style={[styles.recentCard, isHistoryExpanded && styles.recentCardExpanded]}
+          style={[styles.historyCard, isHistoryExpanded && styles.historyCardExpanded]}
           onPress={() => setIsHistoryExpanded(!isHistoryExpanded)}
           activeOpacity={0.7}
         >
-          <View style={styles.recentIconBox}>
-            <Ionicons name="time-outline" size={20} color={COLORS.textSub} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.recentTitle}>Recently completed</Text>
-            <Text style={styles.recentSub}>
-              {mostRecentEvent
-                ? `${mostRecentEvent.provider || 'Panel cleaning'} · ${formatFriendlyDate(mostRecentEvent.date)}`
-                : 'No completed tasks recorded yet'}
-            </Text>
-          </View>
+          <Ionicons name="time-outline" size={20} color="#475569" />
+          <Text style={styles.historyCardTitle}>View maintenance history</Text>
           <Ionicons
             name={isHistoryExpanded ? 'chevron-up' : 'chevron-forward'}
             size={18}
-            color={COLORS.textMuted}
+            color="#94A3B8"
           />
         </TouchableOpacity>
 
@@ -489,7 +544,7 @@ export const CareScreen: React.FC<CareScreenProps> = ({
         )}
       </View>
 
-      {/* ── Quick Wash Details Option ── */}
+      {/* ── Secondary Wash Link ── */}
       <TouchableOpacity
         id="btn-open-detailed-clean"
         style={styles.secondaryWashLink}
@@ -542,10 +597,12 @@ export const CareScreen: React.FC<CareScreenProps> = ({
                 size={18}
                 color={completionDate === todayYMD ? COLORS.success : COLORS.textMuted}
               />
-              <Text style={styles.todayQuickText}>Completed Today ({formatFriendlyDate(todayYMD)})</Text>
+              <Text style={styles.todayQuickText}>
+                Completed Today ({formatFriendlyDate(todayYMD)})
+              </Text>
             </TouchableOpacity>
 
-            {/* Or custom date */}
+            {/* Custom date field */}
             <View style={{ marginTop: SPACING.sm }}>
               <DateField
                 label="Or choose actual completion date"
@@ -562,7 +619,7 @@ export const CareScreen: React.FC<CareScreenProps> = ({
                 style={styles.noteInput}
                 value={completionNotes}
                 onChangeText={setCompletionNotes}
-                placeholder="e.g. Cleaned with hose / Checked inverter lights"
+                placeholder="e.g. Cleaned with hose / Inverter lights verified normal"
                 placeholderTextColor={COLORS.textMuted}
               />
             </View>
@@ -597,85 +654,138 @@ export const CareScreen: React.FC<CareScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#F8FAFC',
   },
   content: {
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.md,
+    paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: SPACING.xxl + 32,
   },
 
-  // Solar Care Hero Card
+  // ── Hero Card (Green Tinted Split Box) ──
   heroCard: {
-    marginBottom: SPACING.lg,
-  },
-  bellBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#F4FEF8',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
+    borderColor: '#E2F7EB',
+    padding: 16,
+    marginBottom: 20,
+    ...SHADOW.card,
   },
-  bellBtnActive: {
-    borderColor: `${COLORS.gold}55`,
-    backgroundColor: COLORS.glowGold,
-  },
-
-  // Status Hero Callout (Inside Card)
-  statusHero: {
+  heroTopRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: SPACING.md - 2,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    gap: 12,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
   },
-  statusHeroCaughtUp: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-  },
-  statusHeroSoon: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
-  },
-  statusHeroOverdue: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-  },
-  statusHeroIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statusHeroTextCol: {
+  heroTitleCol: {
     flex: 1,
   },
-  statusHeroTitle: {
-    fontSize: 15,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
-    lineHeight: 20,
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
-  statusHeroSub: {
-    fontSize: 12.5,
-    color: COLORS.textSub,
+  heroSub: {
+    fontSize: 13,
+    color: '#64748B',
     marginTop: 2,
-    lineHeight: 17,
+  },
+  gearBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
 
-  // Generation Alert
+  // Split Status Box inside Hero Card (Rounded green capsule)
+  heroSplitBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8FDF0',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  heroStatusLeft: {
+    flex: 0.6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  systemStatusTextCol: {
+    flex: 1,
+  },
+  systemStatusTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  statusTitleSuccess: {
+    color: '#0E9E4E',
+  },
+  statusTitleWarning: {
+    color: '#D97706',
+  },
+  statusTitleDanger: {
+    color: '#DC2626',
+  },
+  systemStatusSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  heroSplitDivider: {
+    width: 1,
+    height: 38,
+    backgroundColor: '#D1FAE5',
+    marginHorizontal: 10,
+  },
+  heroStatusRight: {
+    flex: 0.4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  nextTaskTextCol: {
+    alignItems: 'flex-end',
+  },
+  nextTaskLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '500',
+    textAlign: 'right',
+  },
+  nextTaskTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 1,
+    textAlign: 'right',
+  },
+  nextTaskDue: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
+    textAlign: 'right',
+  },
+
+  // Generation Dip Alert
   generationAlert: {
     backgroundColor: '#FFF1F2',
     borderWidth: 1,
     borderColor: '#FECDD3',
     borderRadius: RADIUS.md,
-    padding: SPACING.md - 2,
-    marginTop: SPACING.sm,
+    padding: 12,
+    marginTop: 14,
   },
   generationAlertHeader: {
     flexDirection: 'row',
@@ -694,44 +804,50 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  // Section Header
+  // ── Section Header ──
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.sm + 4,
-    paddingHorizontal: 2,
+    marginBottom: 12,
+    paddingHorizontal: 8,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: FONT.heavy,
-    color: COLORS.text,
-    letterSpacing: -0.2,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
   sectionBadge: {
-    fontSize: 12,
-    fontWeight: FONT.semi,
-    color: COLORS.textMuted,
+    fontSize: 13,
+    color: '#94A3B8',
+    fontWeight: '500',
   },
 
-  // Task Cards
+  // ── Task Cards (Child width under Solar Care) ──
   taskList: {
-    gap: 14,
-    marginBottom: SPACING.lg,
+    gap: 12,
+    marginBottom: 16,
+    paddingHorizontal: 8,
   },
   taskCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: 14,
+    padding: 14,
     ...SHADOW.card,
+  },
+  taskCardHighlighted: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
+  },
+  taskCardNormal: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   taskTopRow: {
     flexDirection: 'row',
-    gap: 12,
     alignItems: 'flex-start',
-    marginBottom: 14,
   },
   taskIconBox: {
     width: 44,
@@ -742,113 +858,110 @@ const styles = StyleSheet.create({
   },
   taskInfoCol: {
     flex: 1,
+    marginLeft: 12,
   },
   taskTitle: {
-    fontSize: 15,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
-    lineHeight: 20,
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#0F172A',
     letterSpacing: -0.2,
   },
   taskDesc: {
     fontSize: 12.5,
-    color: COLORS.textSub,
-    marginTop: 2,
+    color: '#64748B',
+    marginTop: 3,
     lineHeight: 17,
   },
   dueBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginTop: 6,
+    marginTop: 7,
   },
   dueText: {
     fontSize: 12,
-    fontWeight: FONT.semi,
-    lineHeight: 16,
+    fontWeight: '600',
   },
-  dueTextOverdue: {
-    color: COLORS.danger,
+  dueTextUrgent: {
+    color: '#F59E0B',
   },
-  dueTextSoon: {
-    color: '#D97706',
-  },
-  dueTextNormal: {
-    color: COLORS.textMuted,
+  dueTextMuted: {
+    color: '#64748B',
   },
   taskChevronBox: {
     paddingTop: 2,
     paddingLeft: 4,
   },
 
-  // Complete Button
-  completeBtn: {
+  // Mark done button
+  markDoneBtn: {
+    marginTop: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#F8FAFC',
-    paddingVertical: 11,
-    borderRadius: RADIUS.full,
+    paddingVertical: 10,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
-  completeBtnText: {
-    fontSize: 13,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
+  markDoneBtnUrgent: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FDBA74',
+  },
+  markDoneBtnNormal: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CBD5E1',
+  },
+  markDoneBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  markDoneBtnTextUrgent: {
+    color: '#EA580C',
+  },
+  markDoneBtnTextNormal: {
+    color: '#0F172A',
   },
 
-  // Recently Completed Section
+  // ── History Section ──
   recentSection: {
-    marginBottom: SPACING.md,
+    marginBottom: 8,
+    paddingHorizontal: 8,
   },
-  recentCard: {
+  historyCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#E2E8F0',
     ...SHADOW.card,
   },
-  recentCardExpanded: {
+  historyCardExpanded: {
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
-    borderBottomColor: COLORS.borderSubtle,
+    borderBottomColor: '#F1F5F9',
   },
-  recentIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  recentTitle: {
-    fontSize: 14,
-    fontWeight: FONT.bold,
-    color: COLORS.text,
-  },
-  recentSub: {
-    fontSize: 12,
-    color: COLORS.textSub,
-    marginTop: 2,
+  historyCardTitle: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#0F172A',
   },
 
   // Expanded History Dropdown
   historyDropdown: {
-    backgroundColor: COLORS.surface,
-    borderBottomLeftRadius: RADIUS.lg,
-    borderBottomRightRadius: RADIUS.lg,
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
     borderWidth: 1,
     borderTopWidth: 0,
-    borderColor: COLORS.border,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
-    gap: 0,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
   },
   emptyHistoryText: {
     fontSize: 12,
@@ -862,12 +975,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderSubtle,
+    borderBottomColor: '#F1F5F9',
   },
   historyProvider: {
     fontSize: 13,
     fontWeight: FONT.semi,
-    color: COLORS.text,
+    color: '#0F172A',
   },
   historyDate: {
     fontSize: 11,
