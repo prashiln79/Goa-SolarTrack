@@ -53,6 +53,8 @@ import {
   saveActiveConsumerNumber,
   getActiveConsumerNumber,
   createDefaultProfile,
+  deduplicateBills,
+  deduplicateCleaningEvents,
   SyncStatus,
 } from './src/services/solarStorage';
 import { calculateCleaningScore } from './src/domain/cleaningIntelligence';
@@ -136,8 +138,8 @@ function MainApp() {
         getSystemProfile(targetConsumer),
       ]);
 
-      setBills(fetchedBills);
-      setCleanings(fetchedCleanings);
+      setBills(deduplicateBills(fetchedBills));
+      setCleanings(deduplicateCleaningEvents(fetchedCleanings));
 
       if (fetchedProfile) {
         setProfile(fetchedProfile);
@@ -171,8 +173,8 @@ function MainApp() {
             getLocalSystemProfile(savedConsumer),
           ]);
 
-          if (localBills.length > 0) setBills(localBills);
-          if (localCleanings.length > 0) setCleanings(localCleanings);
+          if (localBills.length > 0) setBills(deduplicateBills(localBills));
+          if (localCleanings.length > 0) setCleanings(deduplicateCleaningEvents(localCleanings));
           if (localProfile) {
             setProfile(localProfile);
           } else {
@@ -269,8 +271,9 @@ function MainApp() {
   };
 
   const handleSaveCleaning = async (event: CleaningEvent) => {
-    await saveCleaningEvent(event);
-    await loadAll();
+    const cNum = consumerNumber || profile.consumerNumber || getActiveConsumerNumber() || 'primary';
+    await saveCleaningEvent(event, cNum);
+    await loadAll(cNum);
   };
 
   const handleDeleteCleaning = async (id: string) => {

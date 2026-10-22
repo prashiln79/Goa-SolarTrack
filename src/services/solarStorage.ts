@@ -173,6 +173,68 @@ export async function testFirestoreConnection(): Promise<SyncStatus> {
   }
 }
 
+// ── Bill Month Normalizer & Deduplication ───────────────────────
+export function getMonthPeriodKey(b: SolarBill): string {
+  const parts = (b.period || '').trim().toLowerCase().split(/\s+/);
+  if (parts.length >= 2) {
+    const month = parts[0].slice(0, 3);
+    const year = parts[1].replace(/[^0-9]/g, '');
+    const fullYear = year.length === 2 ? `20${year}` : year;
+    return `${fullYear}-${month}`;
+  }
+  if (b.periodStart && /^\d{4}-\d{2}/.test(b.periodStart)) {
+    return b.periodStart.slice(0, 7).toLowerCase();
+  }
+  return (b.period || '').trim().toLowerCase();
+}
+
+export function deduplicateBills(bills: SolarBill[]): SolarBill[] {
+  const map = new Map<string, SolarBill>();
+  for (const b of bills) {
+    const key = getMonthPeriodKey(b);
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, b);
+    } else {
+      // If one is canonical demo fixture and the other is a real user bill, prefer the real bill
+      if (existing.source === 'canonical_fixture' && b.source !== 'canonical_fixture') {
+        map.set(key, b);
+      } else if (b.source === 'canonical_fixture' && existing.source !== 'canonical_fixture') {
+        // Keep existing user bill
+      } else if ((b.createdAt ?? 0) >= (existing.createdAt ?? 0)) {
+        // Otherwise keep the newer bill
+        map.set(key, b);
+      }
+    }
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.periodStart).getTime() - new Date(a.periodStart).getTime()
+  );
+}
+
+// ── Cleaning Event Deduplication ────────────────────────────────
+export function deduplicateCleaningEvents(events: CleaningEvent[]): CleaningEvent[] {
+  const map = new Map<string, CleaningEvent>();
+  for (const e of events) {
+    if (!e || !e.date) continue;
+    const normDate = e.date.trim();
+    const normProvider = (e.provider || 'Self-cleaned').trim().toLowerCase();
+    const key = `${normDate}_${normProvider}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, e);
+    } else {
+      // Keep newer or more complete event
+      if ((e.createdAt ?? 0) >= (existing.createdAt ?? 0)) {
+        map.set(key, e);
+      }
+    }
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+}
+
 // ── Instant Local Cache Getters (< 15ms) ─────────────────────
 
 export async function getLocalBills(consumerNumber?: string): Promise<SolarBill[]> {
@@ -180,13 +242,13 @@ export async function getLocalBills(consumerNumber?: string): Promise<SolarBill[
   const keys = getKeys(cNum);
   try {
     const raw = await AsyncStorage.getItem(keys.BILLS);
-    if (raw) return JSON.parse(raw) as SolarBill[];
+    if (raw) return deduplicateBills(JSON.parse(raw) as SolarBill[]);
   } catch (_) {}
   try {
     const legacy = await AsyncStorage.getItem('@goa_solar_bills_v2');
     if (legacy) {
       const arr = JSON.parse(legacy);
-      if (Array.isArray(arr) && arr.length > 0) return arr as SolarBill[];
+      if (Array.isArray(arr) && arr.length > 0) return deduplicateBills(arr as SolarBill[]);
     }
   } catch (_) {}
   return [];
@@ -197,7 +259,14 @@ export async function getLocalCleaningEvents(consumerNumber?: string): Promise<C
   const keys = getKeys(cNum);
   try {
     const raw = await AsyncStorage.getItem(keys.CLEANINGS);
-    if (raw) return JSON.parse(raw) as CleaningEvent[];
+    if (raw) return deduplicateCleaningEvents(JSON.parse(raw) as CleaningEvent[]);
+  } catch (_) {}
+  try {
+    const legacy = await AsyncStorage.getItem('@goa_solar_cleanings_v2');
+    if (legacy) {
+      const arr = JSON.parse(legacy);
+      if (Array.isArray(arr) && arr.length > 0) return deduplicateCleaningEvents(arr as CleaningEvent[]);
+    }
   } catch (_) {}
   return [];
 }
@@ -249,13 +318,14 @@ export async function getBills(consumerNumber?: string): Promise<SolarBill[]> {
     }
 
     if (bills.length > 0) {
-      await AsyncStorage.setItem(keys.BILLS, JSON.stringify(bills));
+      const unique = deduplicateBills(bills);
+      await AsyncStorage.setItem(keys.BILLS, JSON.stringify(unique));
       setSyncStatus({
         isFirestoreConnected: true,
         lastSyncedAt: new Date(),
-        message: `Synced ${bills.length} bills`,
+        message: `Synced ${unique.length} bills`,
       });
-      return bills;
+      return unique;
     }
   } catch (err: any) {
     console.warn('[Firestore getBills]', err?.message ?? err);
@@ -276,10 +346,22 @@ export async function saveBill(bill: SolarBill, consumerNumber?: string): Promis
   // Update local cache
   const keys = getKeys(cNum);
   const current = await getBills(cNum);
-  const idx = current.findIndex((b) => b.id === bill.id);
-  const updated = idx >= 0
-    ? [...current.slice(0, idx), billWithConsumer, ...current.slice(idx + 1)]
-    : [billWithConsumer, ...current];
+
+  // If a canonical demo fixture exists for the same period, clean it up
+  const billMonthKey = getMonthPeriodKey(billWithConsumer);
+  const canonicalToDelete = current.find(
+    (b) => b.id.startsWith('canonical-') && b.id !== bill.id && getMonthPeriodKey(b) === billMonthKey
+  );
+  if (canonicalToDelete) {
+    try {
+      await deleteDoc(doc(db, 'solar', cNum, 'bills', canonicalToDelete.id));
+    } catch (_) {}
+  }
+
+  const filtered = current.filter(
+    (b) => b.id !== bill.id && (!canonicalToDelete || b.id !== canonicalToDelete.id)
+  );
+  const updated = deduplicateBills([billWithConsumer, ...filtered]);
   await AsyncStorage.setItem(keys.BILLS, JSON.stringify(updated));
 
   // Push to Firestore subcollection: solar/{consumerNumber}/bills/{bill.id}
@@ -358,8 +440,9 @@ export async function getCleaningEvents(consumerNumber?: string): Promise<Cleani
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     if (evts.length > 0) {
-      await AsyncStorage.setItem(keys.CLEANINGS, JSON.stringify(evts));
-      return evts;
+      const unique = deduplicateCleaningEvents(evts);
+      await AsyncStorage.setItem(keys.CLEANINGS, JSON.stringify(unique));
+      return unique;
     }
   } catch (_) {}
 
@@ -376,7 +459,17 @@ export async function saveCleaningEvent(event: CleaningEvent, consumerNumber?: s
 
   const keys = getKeys(cNum);
   const current = await getCleaningEvents(cNum);
-  const updated = [eventWithConsumer, ...current];
+  const normDate = eventWithConsumer.date.trim();
+  const normProvider = (eventWithConsumer.provider || 'Self-cleaned').trim().toLowerCase();
+  const filtered = current.filter(
+    (e) =>
+      e.id !== eventWithConsumer.id &&
+      !(
+        e.date.trim() === normDate &&
+        (e.provider || 'Self-cleaned').trim().toLowerCase() === normProvider
+      )
+  );
+  const updated = deduplicateCleaningEvents([eventWithConsumer, ...filtered]);
   await AsyncStorage.setItem(keys.CLEANINGS, JSON.stringify(updated));
 
   // Also update lastCleanedDate on profile without erasing other profile fields
@@ -400,6 +493,19 @@ export async function deleteCleaningEvent(eventId: string, consumerNumber?: stri
   const current = await getCleaningEvents(cNum);
   const updated = current.filter((e) => e.id !== eventId);
   await AsyncStorage.setItem(keys.CLEANINGS, JSON.stringify(updated));
+
+  try {
+    const legacy = await AsyncStorage.getItem('@goa_solar_cleanings_v2');
+    if (legacy) {
+      const arr = JSON.parse(legacy);
+      if (Array.isArray(arr)) {
+        await AsyncStorage.setItem(
+          '@goa_solar_cleanings_v2',
+          JSON.stringify(arr.filter((e: any) => e.id !== eventId))
+        );
+      }
+    }
+  } catch (_) {}
 
   // Recalculate lastCleanedDate on profile
   const remainingCleans = updated.filter((e) => !e.skipped);

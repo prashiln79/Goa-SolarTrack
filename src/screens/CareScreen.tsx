@@ -32,6 +32,7 @@ import {
   setupNotificationChannelAsync,
   ScheduleTaskInput,
 } from '../services/notificationService';
+import { deduplicateCleaningEvents } from '../services/solarStorage';
 
 interface CareScreenProps {
   careAssessment: CareAssessment;
@@ -182,6 +183,9 @@ export const CareScreen: React.FC<CareScreenProps> = ({
     };
   }, []);
 
+  // Deduplicate cleaning events so multiple logs for the same day/provider are unified
+  const cleanEvents = useMemo(() => deduplicateCleaningEvents(cleaningEvents), [cleaningEvents]);
+
   // ── Calculate due status for each task (Sorted by urgency) ──
   const tasksWithSchedule = useMemo(() => {
     const list = DEFAULT_TASKS.map((task) => {
@@ -189,12 +193,12 @@ export const CareScreen: React.FC<CareScreenProps> = ({
       let lastCompletedDate: string | null = null;
 
       if (task.id === 'task-clean') {
-        const cleanEvt = cleaningEvents.find(
+        const cleanEvt = cleanEvents.find(
           (e) => !e.skipped && e.provider !== 'Inverter check' && e.provider !== 'Roof inspection'
         );
         lastCompletedDate = cleanEvt?.date || profile.lastCleanedDate || null;
       } else {
-        const matchEvt = cleaningEvents.find((e) => e.provider === task.providerTag);
+        const matchEvt = cleanEvents.find((e) => e.provider === task.providerTag);
         lastCompletedDate = matchEvt?.date || null;
       }
 
@@ -238,7 +242,7 @@ export const CareScreen: React.FC<CareScreenProps> = ({
 
     // Sort ascending by diffDays so nearest task appears first
     return list.sort((a, b) => a.diffDays - b.diffDays);
-  }, [cleaningEvents, profile.lastCleanedDate]);
+  }, [cleanEvents, profile.lastCleanedDate]);
 
   // Overall system summary status
   const overdueTasks = tasksWithSchedule.filter((t) => t.dueSeverity === 'overdue');
@@ -514,10 +518,10 @@ export const CareScreen: React.FC<CareScreenProps> = ({
         {/* Expanded History List */}
         {isHistoryExpanded && (
           <View style={styles.historyDropdown}>
-            {cleaningEvents.length === 0 ? (
+            {cleanEvents.length === 0 ? (
               <Text style={styles.emptyHistoryText}>No maintenance logs found.</Text>
             ) : (
-              cleaningEvents.map((evt) => (
+              cleanEvents.map((evt) => (
                 <View key={evt.id} style={styles.historyRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.historyProvider}>

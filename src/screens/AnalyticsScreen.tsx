@@ -22,7 +22,7 @@ import {
   calculatePaybackAnalysis,
 } from '../domain/analytics';
 import { analyzeIntelligentPerformance } from '../domain/intelligentAnalysis';
-import { saveSystemProfile } from '../services/solarStorage';
+import { saveSystemProfile, deduplicateBills } from '../services/solarStorage';
 import { SHADOW } from '../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -43,24 +43,26 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
 
+  const cleanBills = useMemo(() => deduplicateBills(bills), [bills]);
+
   const monthlyRows = useMemo(
-    () => buildMonthlyAnalytics(bills, profile.capacityKw),
-    [bills, profile.capacityKw]
+    () => buildMonthlyAnalytics(cleanBills, profile.capacityKw),
+    [cleanBills, profile.capacityKw]
   );
   const annual = useMemo(
-    () => buildAnnualAnalytics(bills, profile.capacityKw, cleaningEventCount),
-    [bills, profile.capacityKw, cleaningEventCount]
+    () => buildAnnualAnalytics(cleanBills, profile.capacityKw, cleaningEventCount),
+    [cleanBills, profile.capacityKw, cleaningEventCount]
   );
   const payback = useMemo(
-    () => calculatePaybackAnalysis(bills, profile, annual),
-    [bills, profile, annual]
+    () => calculatePaybackAnalysis(cleanBills, profile, annual),
+    [cleanBills, profile, annual]
   );
   const smartAnalysis = useMemo(
-    () => analyzeIntelligentPerformance(bills, profile, careAssessment),
-    [bills, profile, careAssessment]
+    () => analyzeIntelligentPerformance(cleanBills, profile, careAssessment),
+    [cleanBills, profile, careAssessment]
   );
 
-  const latestBill = bills.length > 0 ? bills[0] : null;
+  const latestBill = cleanBills.length > 0 ? cleanBills[0] : null;
 
   // Expansion states for details
   const [isBillDetailExpanded, setIsBillDetailExpanded] = useState(false);
@@ -85,6 +87,27 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
       return profile.installationDate;
     }
   }, [profile.installationDate]);
+
+  // Break-even text showing ending year only with number of years
+  const breakEvenYearsText = useMemo(() => {
+    if (payback.isFullyRecovered) return 'Recovered 🎉';
+    if (!payback.breakEvenDate || payback.breakEvenDate === 'Target Pending') {
+      return payback.breakEvenDate || 'Pending';
+    }
+
+    // Extract 4-digit ending year (e.g. "March 2030" -> "2030")
+    const yearMatch = payback.breakEvenDate.match(/\b(\d{4})\b/);
+    const endYear = yearMatch ? yearMatch[1] : payback.breakEvenDate;
+
+    if (payback.remainingMonths > 0) {
+      if (payback.remainingMonths < 12) {
+        return `${endYear} (~${payback.remainingMonths} mo${payback.remainingMonths === 1 ? '' : 's'})`;
+      }
+      const yrs = (payback.remainingMonths / 12).toFixed(1).replace('.0', '');
+      return `${endYear} (~${yrs} yr${Number(yrs) === 1 ? '' : 's'})`;
+    }
+    return endYear;
+  }, [payback.isFullyRecovered, payback.breakEvenDate, payback.remainingMonths]);
 
   // Average daily solar gen calculation
   const dailyGenKwh = useMemo(() => {
@@ -202,10 +225,10 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
           <Text style={styles.milestoneText}>
             Installed {installedMonthYear}
           </Text>
-          <Text style={styles.milestoneText}>
-            Break-even around{' '}
+          <Text style={[styles.milestoneText, { textAlign: 'right', flexShrink: 1, marginLeft: 8 }]}>
+            Recovered by{' '}
             <Text style={styles.breakEvenHighlight}>
-              {payback.isFullyRecovered ? 'Recovered 🎉' : payback.breakEvenDate}
+              {breakEvenYearsText}
             </Text>
           </Text>
         </View>

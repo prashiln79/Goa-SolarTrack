@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SolarBill } from '../types/solar';
 import { Divider, LedgerRow, InfoNote } from '../components/ui/UIKit';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
+import { deduplicateBills } from '../services/solarStorage';
 
 interface BillsScreenProps {
   bills: SolarBill[];
@@ -31,10 +32,15 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
 
+  // Deduplicate bills by month/period (prefer user bill over canonical fixture, and newer over older)
+  const uniqueBills = useMemo(() => {
+    return deduplicateBills(bills);
+  }, [bills]);
+
   // Extract unique years from bill periods
   const availableYears = useMemo(() => {
     const set = new Set<string>();
-    bills.forEach((b) => {
+    uniqueBills.forEach((b) => {
       // Period is either "August 2026", "Aug 2026", or "2026-08"
       const match = b.period.match(/\b(20\d\d)\b/);
       if (match) {
@@ -45,29 +51,29 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
       }
     });
     return Array.from(set).sort((a, b) => Number(b) - Number(a));
-  }, [bills]);
+  }, [uniqueBills]);
 
   // Current filtered year (default to latest year available)
   const activeYear = selectedYear || (availableYears.length > 0 ? availableYears[0] : null);
 
   // Filter bills by active year
   const filteredBills = useMemo(() => {
-    if (!activeYear || activeYear === 'All') return bills;
-    return bills.filter((b) => {
+    if (!activeYear || activeYear === 'All') return uniqueBills;
+    return uniqueBills.filter((b) => {
       if (b.period.includes(activeYear)) return true;
       if (b.periodStart && b.periodStart.startsWith(activeYear)) return true;
       return false;
     });
-  }, [bills, activeYear]);
+  }, [uniqueBills, activeYear]);
 
   // Summary figures
-  const latestBill = bills.length > 0 ? bills[0] : null;
-  const earliestBill = bills.length > 0 ? bills[bills.length - 1] : null;
+  const latestBill = uniqueBills.length > 0 ? uniqueBills[0] : null;
+  const earliestBill = uniqueBills.length > 0 ? uniqueBills[uniqueBills.length - 1] : null;
   const totalAmount = useMemo(() => {
-    return bills.reduce((sum, b) => sum + (b.billAmount || 0), 0);
-  }, [bills]);
+    return filteredBills.reduce((sum, b) => sum + (b.billAmount || 0), 0);
+  }, [filteredBills]);
   const dateRangeText =
-    bills.length > 1 && earliestBill && latestBill
+    uniqueBills.length > 1 && earliestBill && latestBill
       ? `${earliestBill.period} – ${latestBill.period}`
       : latestBill
       ? latestBill.period
@@ -138,7 +144,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
           </View>
           <View style={styles.summaryTextCol}>
             <Text style={styles.summaryTitle}>
-              {bills.length} bill{bills.length === 1 ? '' : 's'} recorded
+              {uniqueBills.length} bill{uniqueBills.length === 1 ? '' : 's'} recorded
             </Text>
             <Text style={styles.summarySub}>{dateRangeText}</Text>
           </View>
@@ -152,7 +158,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
             ₹{Math.round(totalAmount).toLocaleString('en-IN')}
           </Text>
           <Text style={styles.latestPeriod}>
-            {bills.length > 0 ? 'all bills' : '—'}
+            {uniqueBills.length > 0 ? (activeYear && activeYear !== 'All' ? `${activeYear} bills` : 'all bills') : '—'}
           </Text>
         </View>
       </View>
@@ -174,7 +180,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
       )}
 
       {/* ── Empty State ── */}
-      {bills.length === 0 && (
+      {uniqueBills.length === 0 && (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
             <Ionicons name="document-text-outline" size={32} color="#EA580C" />

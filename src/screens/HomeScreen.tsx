@@ -25,23 +25,9 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { SolarBill, SystemProfile, CareAssessment } from "../types/solar";
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from "../constants/theme";
+import { deduplicateBills } from "../services/solarStorage";
 
 const MASCOT_HAPPY = require("../../assets/mascot-happy-transparent.png");
-
-// Helper to normalize month key (e.g. "August 2026" or "2026-08" -> "2026-aug")
-const getMonthPeriodKey = (b: SolarBill): string => {
-	const parts = (b.period || "").trim().toLowerCase().split(/\s+/);
-	if (parts.length >= 2) {
-		const month = parts[0].slice(0, 3);
-		const year = parts[1].replace(/[^0-9]/g, "");
-		const fullYear = year.length === 2 ? `20${year}` : year;
-		return `${fullYear}-${month}`;
-	}
-	if (b.periodStart && /^\d{4}-\d{2}/.test(b.periodStart)) {
-		return b.periodStart.slice(0, 7).toLowerCase();
-	}
-	return (b.period || "").trim().toLowerCase();
-};
 
 // Split "Aug '26" into month and year for stacked chart labels
 const parseMonthYearParts = (period: string) => {
@@ -110,18 +96,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
 	// ── Deduplicate bills by month to ensure each month appears strictly once ──
 	const uniqueBills = useMemo(() => {
-		const map = new Map<string, SolarBill>();
-		for (const b of bills) {
-			const key = getMonthPeriodKey(b);
-			const existing = map.get(key);
-			// Keep the newer bill if duplicate exists for the same month
-			if (!existing || (b.createdAt ?? 0) >= (existing.createdAt ?? 0)) {
-				map.set(key, b);
-			}
-		}
-		return Array.from(map.values()).sort(
-			(a, b) => new Date(b.periodStart).getTime() - new Date(a.periodStart).getTime()
-		);
+		return deduplicateBills(bills);
 	}, [bills]);
 
 	// ── Chronological bills for Monthly Generation Bar Chart (oldest -> newest) ──
@@ -201,25 +176,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 		};
 	}, [careAssessment.state, careAssessment.daysSinceLastClean]);
 
-	// Latest bill record (from deduplicated bills)
-	const latestBill = uniqueBills.length > 0 ? uniqueBills[0] : null;
-
-	if (!latestBill) {
-		return <EmptyState onAddBill={onAddBill} />;
-	}
-
-	// ── Energy Calculations (Preserving Single Source of Truth) ──
-	const isPartialMonth =
-		latestBill.billingDays && latestBill.billingDays < 25 && latestBill.billingDays > 0;
-	const periodLabel = isPartialMonth ? `${latestBill.period} (Month to date)` : latestBill.period;
-
-	// Daily generation rate
-	const days = latestBill.billingDays || 31;
-	const avgDailyGen =
-		latestBill.generationKwh !== null && days > 0
-			? (latestBill.generationKwh / days).toFixed(1)
-			: null;
-
 	// Helper to safely get solar generation for any bill
 	const getBillGeneration = (b: SolarBill): number => {
 		if (b.generationKwh !== null && b.generationKwh !== undefined && b.generationKwh > 0) {
@@ -255,6 +211,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 			return sum + direct;
 		}, 0);
 	}, [yearBills]);
+
+	// Latest bill record (from deduplicated bills)
+	const latestBill = uniqueBills.length > 0 ? uniqueBills[0] : null;
+
+	if (!latestBill) {
+		return <EmptyState onAddBill={onAddBill} />;
+	}
+
+	// ── Energy Calculations (Preserving Single Source of Truth) ──
+	const isPartialMonth =
+		latestBill.billingDays && latestBill.billingDays < 25 && latestBill.billingDays > 0;
+	const periodLabel = isPartialMonth ? `${latestBill.period} (Month to date)` : latestBill.period;
+
+	// Daily generation rate
+	const days = latestBill.billingDays || 31;
+	const avgDailyGen =
+		latestBill.generationKwh !== null && days > 0
+			? (latestBill.generationKwh / days).toFixed(1)
+			: null;
 
 	// Scope values
 	const activeGen =
