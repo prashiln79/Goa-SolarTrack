@@ -64,6 +64,11 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
 
   const latestBill = cleanBills.length > 0 ? cleanBills[0] : null;
 
+  // Banked energy settlement calculation
+  const settlementRate = profile.settlementRateInr ?? 3.5;
+  const bankedUnits = latestBill ? latestBill.closingCreditKwh || 0 : 0;
+  const payableAmountInr = Math.round(bankedUnits * settlementRate);
+
   // Expansion states for details
   const [isBillDetailExpanded, setIsBillDetailExpanded] = useState(false);
   const [isSolarDetailExpanded, setIsSolarDetailExpanded] = useState(false);
@@ -424,7 +429,74 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* ── Card 3: Monthly Breakdown (Collapsible) ── */}
+      {/* ── Card 3: Banked Energy Settlement (Payable Amount) ── */}
+      <View style={styles.heroCard}>
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroTitleCol}>
+            <Text style={styles.cardTitle}>Banked units payout</Text>
+            <Text style={styles.cardSub}>
+              Payable settlement value of surplus units credited to the grid.
+            </Text>
+          </View>
+          <View style={styles.settlementBadge}>
+            <Text style={styles.settlementBadgeText}>
+              ₹{settlementRate.toFixed(2)}/kWh
+            </Text>
+          </View>
+        </View>
+
+        {/* Hero Box: Estimated Payable Amount */}
+        <View style={styles.settlementHeroBox}>
+          <View>
+            <Text style={styles.settlementHeroLabel}>Estimated payable amount</Text>
+            <Text style={styles.settlementHeroAmount}>
+              ₹{payableAmountInr.toLocaleString('en-IN')}
+            </Text>
+          </View>
+          <View style={styles.settlementIconBox}>
+            <Ionicons name="cash" size={26} color="#059669" />
+          </View>
+        </View>
+
+        {/* 2-Tile Split: Banked Units & Settlement Rate */}
+        <View style={styles.tilesSplitRow}>
+          {/* Tile 1: Banked Units */}
+          <View style={styles.bankedUnitsTile}>
+            <View style={styles.tileHeaderRow}>
+              <Ionicons name="wallet-outline" size={20} color="#2563EB" />
+              <Text style={styles.tileBadgeBlue}>Reserve</Text>
+            </View>
+            <Text style={styles.bankedTileAmount}>
+              {bankedUnits.toLocaleString('en-IN')}
+              <Text style={styles.tileUnitText}> kWh</Text>
+            </Text>
+            <Text style={styles.savedTileLabel}>banked units</Text>
+          </View>
+
+          {/* Tile 2: APPC Rate */}
+          <View style={styles.settlementRateTile}>
+            <View style={styles.tileHeaderRow}>
+              <Ionicons name="pricetag-outline" size={20} color="#059669" />
+              <Text style={styles.tileBadgeGreen}>APPC</Text>
+            </View>
+            <Text style={styles.rateTileAmount}>
+              ₹{settlementRate.toFixed(2)}
+              <Text style={styles.tileUnitText}> /kWh</Text>
+            </Text>
+            <Text style={styles.savedTileLabel}>settlement rate</Text>
+          </View>
+        </View>
+
+        {/* Explanatory Policy Callout */}
+        <View style={styles.settlementNoteBox}>
+          <Ionicons name="information-circle-outline" size={16} color="#0369A1" />
+          <Text style={styles.settlementNoteText}>
+            Under Goa JERC net metering rules, unadjusted banked solar units remaining at the annual settlement cycle (March 31) are eligible for payout/credit at the APPC benchmark rate.
+          </Text>
+        </View>
+      </View>
+
+      {/* ── Card 4: Monthly Breakdown (Collapsible) ── */}
       {tableRows.length > 0 && (
         <View style={styles.historySection}>
           <TouchableOpacity
@@ -1007,5 +1079,127 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+
+  // Banked Units Settlement Card
+  settlementBadge: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  settlementBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  settlementHeroBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 14,
+  },
+  settlementHeroLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#15803D',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  settlementHeroAmount: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 4,
+    letterSpacing: -0.5,
+  },
+  settlementIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bankedUnitsTile: {
+    flex: 1,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    borderRadius: 14,
+    padding: 14,
+  },
+  settlementRateTile: {
+    flex: 1,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    borderRadius: 14,
+    padding: 14,
+  },
+  tileHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  tileBadgeBlue: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#2563EB',
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  tileBadgeGreen: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#059669',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  bankedTileAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1D4ED8',
+    marginTop: 10,
+    letterSpacing: -0.3,
+  },
+  rateTileAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#059669',
+    marginTop: 10,
+    letterSpacing: -0.3,
+  },
+  tileUnitText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  settlementNoteBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+    borderRadius: 12,
+    padding: 12,
+  },
+  settlementNoteText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#0369A1',
+    lineHeight: 16.5,
   },
 });

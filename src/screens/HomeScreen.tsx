@@ -247,6 +247,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 			? latestBill.importKwh
 			: yearImport;
 
+	// Net banked units added in a bill (surplus exported after offsetting import)
+	const getBillBankedSurplus = (b: SolarBill): number => {
+		if (
+			b.closingCreditKwh !== undefined &&
+			b.openingCreditKwh !== undefined &&
+			b.openingCreditKwh > 0
+		) {
+			return Math.max(0, b.closingCreditKwh - b.openingCreditKwh);
+		}
+		const exp = b.exportKwh || 0;
+		const offset = b.adjustedCreditKwh ?? (b.importKwh || 0);
+		return Math.max(0, exp - offset);
+	};
+
+	const monthBanked = getBillBankedSurplus(latestBill);
+	const yearBanked = yearBills.reduce((sum, b) => sum + getBillBankedSurplus(b), 0);
+
+	const activeBanked = flowScope === "month" ? monthBanked : yearBanked;
+
 	// Direct solar used at home: max(0, gen - export)
 	const activeUsedAtHome =
 		flowScope === "month"
@@ -265,16 +284,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 			? Math.min(100, Math.round((activeUsedAtHome / activeHomeConsumption) * 100))
 			: 0;
 
-	// Energy distribution percentages (share of solar generated)
-	const totalSolarForDist = activeUsedAtHome + activeExport > 0
-		? activeUsedAtHome + activeExport
-		: Math.max(1, activeGen);
-
-	const usedAtHomePct =
-		totalSolarForDist > 0
-			? Math.min(100, Math.round((activeUsedAtHome / totalSolarForDist) * 100))
-			: 0;
-	const exportedPct = Math.max(0, 100 - usedAtHomePct);
+	// Energy distribution percentages (Household Consumption vs Banked Credit)
+	const totalHouseholdAndBanked = activeHomeConsumption + activeBanked;
+	const homeSharePct =
+		totalHouseholdAndBanked > 0
+			? Math.round((activeHomeConsumption / totalHouseholdAndBanked) * 100)
+			: 100;
+	const bankedSharePct = Math.max(0, 100 - homeSharePct);
 
 	// Bill status comparison
 	let billStatusBadge = "Normal";
@@ -441,61 +457,69 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
 				{/* Simple Horizontal Distribution Bar */}
 				<View style={styles.distTrack}>
-					{/* Green Segment: Used at Home */}
+					{/* Green Segment: Total Household Consumption */}
 					<View
 						style={[
 							styles.distSegmentHome,
-							{ flex: Math.max(0.08, usedAtHomePct) },
+							{ flex: Math.max(0.08, homeSharePct) },
 						]}
 					>
-						{usedAtHomePct >= 18 && (
-							<Text style={styles.distBarPctText}>{`${usedAtHomePct}%`}</Text>
+						{homeSharePct >= 18 && (
+							<Text style={styles.distBarPctText}>{`${homeSharePct}%`}</Text>
 						)}
 					</View>
 
-					{/* Blue Segment: Exported to Grid */}
+					{/* Blue Segment: Banked Units */}
 					<View
 						style={[
 							styles.distSegmentExport,
-							{ flex: Math.max(0.08, exportedPct) },
+							{ flex: Math.max(activeBanked > 0 ? 0.08 : 0, bankedSharePct) },
 						]}
 					>
-						{exportedPct >= 18 && (
-							<Text style={styles.distBarPctText}>{`${exportedPct}%`}</Text>
+						{bankedSharePct >= 18 && (
+							<Text style={styles.distBarPctText}>{`${bankedSharePct}%`}</Text>
 						)}
 					</View>
 				</View>
 
 				{/* Two Clearly Labelled Metric Boxes */}
 				<View style={styles.distBoxesRow}>
-					{/* Box 1: Used at home */}
+					{/* Box 1: Total Household Consumption */}
 					<View style={styles.distBoxHome}>
 						<View style={styles.distBoxHeader}>
 							<View style={styles.distDotHome} />
-							<Text style={styles.distBoxLabel}>Used at home</Text>
+							<Text style={styles.distBoxLabel}>Household consumed</Text>
 						</View>
 						<View style={styles.distBoxValRow}>
 							<Text style={styles.distBoxVal}>
-								{Math.round(activeUsedAtHome)}
+								{Math.round(activeHomeConsumption)}
 								<Text style={styles.distBoxUnit}> kWh</Text>
 							</Text>
-							<Text style={styles.distBoxShareHome}>{`${usedAtHomePct}%`}</Text>
+							<Text style={styles.distBoxShareHome}>{`${homeSharePct}%`}</Text>
 						</View>
+						<Text style={styles.distBoxSubtext}>Total home electricity</Text>
 					</View>
 
-					{/* Box 2: Exported to grid */}
+					{/* Box 2: Banked Units Only */}
 					<View style={styles.distBoxExport}>
 						<View style={styles.distBoxHeader}>
 							<View style={styles.distDotExport} />
-							<Text style={styles.distBoxLabel}>Exported to grid</Text>
+							<Text style={styles.distBoxLabel}>Banked units</Text>
 						</View>
 						<View style={styles.distBoxValRow}>
 							<Text style={styles.distBoxVal}>
-								{Math.round(activeExport)}
+								{Math.round(activeBanked)}
 								<Text style={styles.distBoxUnit}> kWh</Text>
 							</Text>
-							<Text style={styles.distBoxShareExport}>{`${exportedPct}%`}</Text>
+							{activeBanked > 0 && (
+								<Text style={styles.distBoxShareExport}>{`${bankedSharePct}%`}</Text>
+							)}
 						</View>
+						<Text style={styles.distBoxSubtext}>
+							{latestBill.closingCreditKwh > 0
+								? `Total reserve: ${Math.round(latestBill.closingCreditKwh)} kWh`
+								: "No banked reserve"}
+						</Text>
 					</View>
 				</View>
 
@@ -1033,6 +1057,12 @@ const styles = StyleSheet.create({
 		fontSize: 15,
 		fontWeight: FONT.bold,
 		color: "#2563EB",
+	},
+	distBoxSubtext: {
+		fontSize: 11,
+		color: "#64748B",
+		marginTop: 4,
+		fontWeight: FONT.medium,
 	},
 	distCalloutBanner: {
 		flexDirection: "row",
