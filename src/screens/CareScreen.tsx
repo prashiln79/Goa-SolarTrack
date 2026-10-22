@@ -225,7 +225,7 @@ export const CareScreen: React.FC<CareScreenProps> = ({
 
       if (diffDays < 0) {
         dueSeverity = 'overdue';
-      } else if (diffDays <= 14) {
+      } else if (diffDays <= 7) {
         dueSeverity = 'soon';
       }
 
@@ -246,7 +246,9 @@ export const CareScreen: React.FC<CareScreenProps> = ({
 
   // Overall system summary status
   const overdueTasks = tasksWithSchedule.filter((t) => t.dueSeverity === 'overdue');
-  const nextTask = tasksWithSchedule[0] || null;
+  // Only promote to active "Next task" if it is actually close (due within 7 days or overdue)
+  const dueSoonTasks = tasksWithSchedule.filter((t) => t.dueSeverity !== 'normal');
+  const activeNextTask = dueSoonTasks[0] || null;
 
   // ── Sync Android OS System Notifications ─────────────────────
   useEffect(() => {
@@ -387,19 +389,20 @@ export const CareScreen: React.FC<CareScreenProps> = ({
             </View>
           </View>
 
-          {/* Right Column: Next Task */}
-          <View style={styles.heroStatusRight}>
-            {/* <Ionicons name="calendar-outline" size={24} color="#64748B" /> */}
-            <View style={styles.nextTaskTextCol}>
-              <Text style={styles.nextTaskLabel}>Next task</Text>
-              <Text style={styles.nextTaskTitle} numberOfLines={1}>
-                {nextTask ? nextTask.title : 'All caught up'}
-              </Text>
-              <Text style={styles.nextTaskDue} numberOfLines={1}>
-                {nextTask ? nextTask.dueText : 'No tasks scheduled'}
-              </Text>
+          {/* Right Column: Next Task (Shown only when tasks are due or overdue) */}
+          {activeNextTask ? (
+            <View style={styles.heroStatusRight}>
+              <View style={styles.nextTaskTextCol}>
+                <Text style={styles.nextTaskLabel}>Next task</Text>
+                <Text style={styles.nextTaskTitle} numberOfLines={1}>
+                  {activeNextTask.title}
+                </Text>
+                <Text style={styles.nextTaskDue} numberOfLines={1}>
+                  {activeNextTask.dueText}
+                </Text>
+              </View>
             </View>
-          </View>
+          ) : null}
         </View>
 
         {/* Optional Generation Dip Alert if needed */}
@@ -426,16 +429,15 @@ export const CareScreen: React.FC<CareScreenProps> = ({
 
       {/* ── Task Cards List ── */}
       <View style={styles.taskList}>
-        {tasksWithSchedule.map((task, index) => {
-          const isFirstOrUrgent =
-            index === 0 || task.dueSeverity === 'overdue' || task.dueSeverity === 'soon';
+        {tasksWithSchedule.map((task) => {
+          const isUrgent = task.dueSeverity === 'overdue' || task.dueSeverity === 'soon';
 
           return (
             <View
               key={task.id}
               style={[
                 styles.taskCard,
-                isFirstOrUrgent ? styles.taskCardHighlighted : styles.taskCardNormal,
+                isUrgent ? styles.taskCardHighlighted : styles.taskCardNormal,
               ]}
             >
               <View style={styles.taskTopRow}>
@@ -451,12 +453,12 @@ export const CareScreen: React.FC<CareScreenProps> = ({
                     <Ionicons
                       name="calendar-outline"
                       size={14}
-                      color={isFirstOrUrgent ? '#F59E0B' : '#94A3B8'}
+                      color={isUrgent ? '#F59E0B' : '#94A3B8'}
                     />
                     <Text
                       style={[
                         styles.dueText,
-                        isFirstOrUrgent ? styles.dueTextUrgent : styles.dueTextMuted,
+                        isUrgent ? styles.dueTextUrgent : styles.dueTextMuted,
                       ]}
                     >
                       {task.dueText}
@@ -474,7 +476,7 @@ export const CareScreen: React.FC<CareScreenProps> = ({
                 id={`btn-complete-${task.id}`}
                 style={[
                   styles.markDoneBtn,
-                  isFirstOrUrgent ? styles.markDoneBtnUrgent : styles.markDoneBtnNormal,
+                  isUrgent ? styles.markDoneBtnUrgent : styles.markDoneBtnNormal,
                 ]}
                 onPress={() => handleOpenCompleteModal(task)}
                 activeOpacity={0.7}
@@ -482,12 +484,12 @@ export const CareScreen: React.FC<CareScreenProps> = ({
                 <Ionicons
                   name="checkmark"
                   size={16}
-                  color={isFirstOrUrgent ? '#EA580C' : '#0F172A'}
+                  color={isUrgent ? '#EA580C' : '#0F172A'}
                 />
                 <Text
                   style={[
                     styles.markDoneBtnText,
-                    isFirstOrUrgent ? styles.markDoneBtnTextUrgent : styles.markDoneBtnTextNormal,
+                    isUrgent ? styles.markDoneBtnTextUrgent : styles.markDoneBtnTextNormal,
                   ]}
                 >
                   Mark done
@@ -720,7 +722,7 @@ const styles = StyleSheet.create({
     borderColor: '#DCFCE7',
   },
   heroStatusLeft: {
-    flex: 0.6,
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
