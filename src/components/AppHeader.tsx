@@ -53,19 +53,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       {/* Actions */}
       <View style={styles.actions}>
         <TouchableOpacity
-          id="btn-sync-status"
-          style={styles.syncDot}
-          onPress={onSettingsPress}
-          activeOpacity={0.7}
-        >
-          <View
-            style={[
-              styles.dot,
-              { backgroundColor: syncStatus.isFirestoreConnected ? COLORS.success : COLORS.muted },
-            ]}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
           id="btn-add-bill-header"
           style={styles.addBtn}
           onPress={onAddBill}

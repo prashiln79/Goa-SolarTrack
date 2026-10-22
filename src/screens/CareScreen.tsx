@@ -564,13 +564,8 @@ export const CareScreen: React.FC<CareScreenProps> = ({
         transparent
         onRequestClose={() => setCompletingTask(null)}
       >
-        <KeyboardAvoidingView style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalSheet,
-              { paddingBottom: Math.max(insets.bottom, 16) + 12 },
-            ]}
-          >
+        <KeyboardAvoidingView behavior="height" style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>Mark Completed</Text>
@@ -584,66 +579,72 @@ export const CareScreen: React.FC<CareScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Quick 1-tap today button */}
-            <TouchableOpacity
-              style={[
-                styles.todayQuickBtn,
-                completionDate === todayYMD && styles.todayQuickBtnActive,
-              ]}
-              onPress={() => setCompletionDate(todayYMD)}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}
             >
-              <Ionicons
-                name={completionDate === todayYMD ? 'checkmark-circle' : 'ellipse-outline'}
-                size={18}
-                color={completionDate === todayYMD ? COLORS.success : COLORS.textMuted}
-              />
-              <Text style={styles.todayQuickText}>
-                Completed Today ({formatFriendlyDate(todayYMD)})
-              </Text>
-            </TouchableOpacity>
-
-            {/* Custom date field */}
-            <View style={{ marginTop: SPACING.sm }}>
-              <DateField
-                label="Or choose actual completion date"
-                value={completionDate}
-                onChange={setCompletionDate}
-                placeholder={todayYMD}
-              />
-            </View>
-
-            {/* Optional note */}
-            <View style={styles.noteFieldGroup}>
-              <Text style={styles.noteLabel}>Optional note</Text>
-              <TextInput
-                style={styles.noteInput}
-                value={completionNotes}
-                onChangeText={setCompletionNotes}
-                placeholder="e.g. Cleaned with hose / Inverter lights verified normal"
-                placeholderTextColor={COLORS.textMuted}
-              />
-            </View>
-
-            {/* Action Buttons */}
-            <View style={styles.modalFooterBtns}>
+              {/* Quick 1-tap today button */}
               <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setCompletingTask(null)}
+                style={[
+                  styles.todayQuickBtn,
+                  completionDate === todayYMD && styles.todayQuickBtnActive,
+                ]}
+                onPress={() => setCompletionDate(todayYMD)}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalSaveBtn, isSubmitting && { opacity: 0.65 }]}
-                onPress={handleConfirmCompletion}
-                disabled={isSubmitting}
-              >
-                <Ionicons name="checkmark-done" size={16} color={COLORS.textInverse} />
-                <Text style={styles.modalSaveText}>
-                  {isSubmitting ? 'Saving…' : 'Save & Reschedule'}
+                <Ionicons
+                  name={completionDate === todayYMD ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={18}
+                  color={completionDate === todayYMD ? COLORS.success : COLORS.textMuted}
+                />
+                <Text style={styles.todayQuickText}>
+                  Completed Today ({formatFriendlyDate(todayYMD)})
                 </Text>
               </TouchableOpacity>
-            </View>
+
+              {/* Custom date field */}
+              <View style={{ marginTop: SPACING.sm }}>
+                <DateField
+                  label="Or choose actual completion date"
+                  value={completionDate}
+                  onChange={setCompletionDate}
+                  placeholder={todayYMD}
+                />
+              </View>
+
+              {/* Optional note */}
+              <View style={styles.noteFieldGroup}>
+                <Text style={styles.noteLabel}>Optional note</Text>
+                <TextInput
+                  style={styles.noteInput}
+                  value={completionNotes}
+                  onChangeText={setCompletionNotes}
+                  placeholder="e.g. Cleaned with hose / Inverter lights verified normal"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.modalFooterBtns}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setCompletingTask(null)}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, isSubmitting && { opacity: 0.65 }]}
+                  onPress={handleConfirmCompletion}
+                  disabled={isSubmitting}
+                >
+                  <Ionicons name="checkmark-done" size={16} color={COLORS.textInverse} />
+                  <Text style={styles.modalSaveText}>
+                    {isSubmitting ? 'Saving…' : 'Save & Reschedule'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -1018,6 +1019,7 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
+    maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',

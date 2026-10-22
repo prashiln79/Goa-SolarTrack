@@ -458,7 +458,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
 
       {/* ── Edit System Investment Modal ── */}
       <Modal visible={showEditCost} animationType="slide" transparent onRequestClose={() => setShowEditCost(false)}>
-        <KeyboardAvoidingView style={styles.overlay}>
+        <KeyboardAvoidingView behavior="height" style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Edit Solar Investment</Text>
@@ -470,40 +470,46 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <View style={styles.sheetBody}>
-              <Text style={styles.fieldLabel}>Total System Investment Cost (₹)</Text>
-              <TextInput
-                style={styles.input}
-                value={costInput}
-                onChangeText={setCostInput}
-                keyboardType="numeric"
-                placeholder="e.g. 250000"
-                placeholderTextColor="#94A3B8"
-              />
-              <Text style={styles.modalHelperText}>
-                Enter the net capital cost for your solar system after subsidies. Benchmark for Goa is ~₹55,000 / kW.
-              </Text>
-            </View>
-
-            <View style={[styles.sheetFooter, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
-              <TouchableOpacity
-                id="btn-cancel-cost"
-                style={styles.cancelBtn}
-                onPress={() => setShowEditCost(false)}
-              >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                id="btn-save-cost"
-                style={[styles.saveBtn, isSavingCost && { opacity: 0.65 }]}
-                onPress={handleSaveCost}
-                disabled={isSavingCost}
-              >
-                <Text style={styles.saveBtnText}>
-                  {isSavingCost ? 'Saving…' : 'Save Investment'}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 12 }}
+            >
+              <View style={styles.sheetBody}>
+                <Text style={styles.fieldLabel}>Total System Investment Cost (₹)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={costInput}
+                  onChangeText={setCostInput}
+                  keyboardType="numeric"
+                  placeholder="e.g. 250000"
+                  placeholderTextColor="#94A3B8"
+                />
+                <Text style={styles.modalHelperText}>
+                  Enter the net capital cost for your solar system after subsidies. Benchmark for Goa is ~₹55,000 / kW.
                 </Text>
-              </TouchableOpacity>
-            </View>
+              </View>
+
+              <View style={styles.sheetFooter}>
+                <TouchableOpacity
+                  id="btn-cancel-cost"
+                  style={styles.cancelBtn}
+                  onPress={() => setShowEditCost(false)}
+                >
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  id="btn-save-cost"
+                  style={[styles.saveBtn, isSavingCost && { opacity: 0.65 }]}
+                  onPress={handleSaveCost}
+                  disabled={isSavingCost}
+                >
+                  <Text style={styles.saveBtnText}>
+                    {isSavingCost ? 'Saving…' : 'Save Investment'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -913,6 +919,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
+    maxHeight: '90%',
   },
   sheetHeader: {
     flexDirection: 'row',

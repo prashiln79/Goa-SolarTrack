@@ -92,9 +92,17 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
         if (canCancel && onClose) onClose();
       }}
     >
-      <KeyboardAvoidingView style={[styles.overlay, { paddingTop: Math.max(insets.top, SPACING.lg), paddingBottom: Math.max(insets.bottom, SPACING.lg) }]}>
+      <KeyboardAvoidingView
+        behavior="height"
+        style={[styles.overlay, { paddingTop: Math.max(insets.top, SPACING.lg), paddingBottom: Math.max(insets.bottom, SPACING.lg) }]}
+      >
         <View style={styles.card}>
-          <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: SPACING.lg }}
+          >
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.iconCircle}>

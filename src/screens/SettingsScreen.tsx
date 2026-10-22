@@ -499,7 +499,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         transparent
         onRequestClose={() => setShowEditProfile(false)}
       >
-        <KeyboardAvoidingView style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="height" style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit System Profile</Text>
@@ -512,7 +512,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               <InputField
                 label="System Capacity (kW) *"
                 value={capacityKw}

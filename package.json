@@ -33,7 +33,8 @@
     "test": "node --experimental-strip-types scripts/test_pdf_parser.mjs",
     "build:apk": "mkdir -p build && npm_config_cache=$HOME/.npm-user-cache ANDROID_HOME=$HOME/Library/Android/sdk ANDROID_SDK_ROOT=$HOME/Library/Android/sdk eas build -p android --profile preview --local --output=./build/goa-solartrack-preview.apk",
     "build:aab": "mkdir -p build && npm_config_cache=$HOME/.npm-user-cache ANDROID_HOME=$HOME/Library/Android/sdk ANDROID_SDK_ROOT=$HOME/Library/Android/sdk eas build -p android --profile production --local --output=./build/goa-solartrack-production.aab",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "postinstall": "node scripts/patch_expo_notifications.js"
   },
   "private": true
 }

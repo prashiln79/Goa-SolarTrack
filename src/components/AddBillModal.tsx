@@ -606,6 +606,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
             text: 'Overwrite & Save',
             style: 'destructive',
             onPress: () => {
+              bill.id = existingDuplicate.id;
               commitSave();
             },
           },
@@ -619,7 +620,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay}>
+      <KeyboardAvoidingView behavior="height" style={styles.overlay}>
         <View style={styles.sheet}>
           {/* ── Modal Header ── */}
           <View style={styles.sheetHeader}>
@@ -1631,7 +1632,7 @@ const styles = StyleSheet.create({
   },
   formContent: {
     padding: SPACING.lg,
-    paddingBottom: SPACING.xl,
+    paddingBottom: 60,
   },
 
   // PDF Upload Card

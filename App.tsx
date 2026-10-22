@@ -408,6 +408,7 @@ function MainApp() {
             onAddBill={() => setIsAddBillOpen(true)}
             onLogClean={() => setIsAddCleanOpen(true)}
             onSeedCanonical={handleSeedCanonical}
+            onNavigateBills={() => setActiveTab('bills')}
             onNavigateCare={() => setActiveTab('care')}
             onNavigateAnalytics={() => setActiveTab('analytics')}
           />

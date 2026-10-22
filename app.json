@@ -2,13 +2,13 @@
   "expo": {
     "name": "Goa SolarTrack",
     "slug": "Goa-SolarTrack",
-    "version": "1.0.8",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.prashiln79.goasolartrack",
-      "versionCode": 8,
+      "versionCode": 20,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png",

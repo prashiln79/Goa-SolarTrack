@@ -1,24 +1,58 @@
 // ============================================================
-// Home Screen — Minimal, Clean, and Intuitive Layout
+// Goa SolarTrack — Home Screen
+// Designed for Quick Comprehension, Trustworthy Data & Easy Daily Use
+// 5 Compact Content Areas:
+// 1. Monthly Energy Overview (Hero Card with Integrated Mascot)
+// 2. Where your energy went (Energy Distribution)
+// 3. Monthly Solar Generation (5–6 Months Vertical Bar Chart)
+// 4. Latest Electricity Bill (Quick Action Card)
+// 5. Next Solar Care Task (Quick Action Card)
 // ============================================================
-import React, { useState, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
+
+import React, { useState, useMemo, useEffect } from "react";
+import {
+	View,
+	Text,
+	StyleSheet,
+	ScrollView,
+	TouchableOpacity,
+	RefreshControl,
+	Image,
+	Animated,
+	Easing,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { SolarBill, SystemProfile, CareAssessment } from "../types/solar";
-import { Card, Badge, LedgerRow } from "../components/ui/UIKit";
-import { projectSettlement } from "../domain/tariffEngine";
-import { analyzeIntelligentPerformance } from "../domain/intelligentAnalysis";
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from "../constants/theme";
 
-const formatMonthShort = (period: string) => {
-	const parts = period.trim().split(" ");
+const MASCOT_HAPPY = require("../../assets/mascot-happy-transparent.png");
+
+// Helper to normalize month key (e.g. "August 2026" or "2026-08" -> "2026-aug")
+const getMonthPeriodKey = (b: SolarBill): string => {
+	const parts = (b.period || "").trim().toLowerCase().split(/\s+/);
 	if (parts.length >= 2) {
 		const month = parts[0].slice(0, 3);
-		const yr = parts[1].length === 4 ? parts[1].slice(2) : parts[1];
-		return `${month} '${yr}`;
+		const year = parts[1].replace(/[^0-9]/g, "");
+		const fullYear = year.length === 2 ? `20${year}` : year;
+		return `${fullYear}-${month}`;
 	}
-	return period;
+	if (b.periodStart && /^\d{4}-\d{2}/.test(b.periodStart)) {
+		return b.periodStart.slice(0, 7).toLowerCase();
+	}
+	return (b.period || "").trim().toLowerCase();
+};
+
+// Split "Aug '26" into month and year for stacked chart labels
+const parseMonthYearParts = (period: string) => {
+	const parts = period.trim().split(" ");
+	if (parts.length >= 2) {
+		return {
+			month: parts[0].slice(0, 3),
+			year: `'${parts[1].length === 4 ? parts[1].slice(2) : parts[1]}`,
+		};
+	}
+	return { month: period, year: "" };
 };
 
 interface HomeScreenProps {
@@ -30,6 +64,7 @@ interface HomeScreenProps {
 	onAddBill: () => void;
 	onLogClean: () => void;
 	onSeedCanonical?: () => void;
+	onNavigateBills?: () => void;
 	onNavigateCare: () => void;
 	onNavigateAnalytics: () => void;
 }
@@ -42,60 +77,108 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 	onRefresh,
 	onAddBill,
 	onLogClean,
+	onNavigateBills,
 	onNavigateCare,
 	onNavigateAnalytics,
 }) => {
-	// ── Scope toggle for Energy Overview (Latest Month vs All Bills) ──
-	const [flowScope, setFlowScope] = useState<"month" | "all">("month");
-	const [activeCompareTab, setActiveCompareTab] = useState<"home" | "export">("home");
-	const [showBreakdown, setShowBreakdown] = useState(false);
-	const [selectedGraphBillId, setSelectedGraphBillId] = useState<string | null>(null);
+	// Scope toggle: "month" (latest billing period) vs "year" (all bills aggregated)
+	const [flowScope, setFlowScope] = useState<"month" | "year">("month");
+	const [selectedBarBillId, setSelectedBarBillId] = useState<string | null>(null);
 
-	const smartAnalysis = useMemo(() => {
-		return analyzeIntelligentPerformance(bills, profile, careAssessment);
-	}, [bills, profile, careAssessment]);
+	// ── Subtle Mascot Floating Idle Animation ──
+	const [floatAnim] = useState(() => new Animated.Value(0));
+	useEffect(() => {
+		const animation = Animated.loop(
+			Animated.sequence([
+				Animated.timing(floatAnim, {
+					toValue: -5,
+					duration: 2200,
+					easing: Easing.inOut(Easing.sin),
+					useNativeDriver: true,
+				}),
+				Animated.timing(floatAnim, {
+					toValue: 0,
+					duration: 2200,
+					easing: Easing.inOut(Easing.sin),
+					useNativeDriver: true,
+				}),
+			])
+		);
+		animation.start();
+		return () => animation.stop();
+	}, [floatAnim]);
 
-	// Chronological bills for generation graph (oldest -> newest)
-	const sortedBills = useMemo(() => {
-		return [...bills].sort((a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime());
+	// ── Deduplicate bills by month to ensure each month appears strictly once ──
+	const uniqueBills = useMemo(() => {
+		const map = new Map<string, SolarBill>();
+		for (const b of bills) {
+			const key = getMonthPeriodKey(b);
+			const existing = map.get(key);
+			// Keep the newer bill if duplicate exists for the same month
+			if (!existing || (b.createdAt ?? 0) >= (existing.createdAt ?? 0)) {
+				map.set(key, b);
+			}
+		}
+		return Array.from(map.values()).sort(
+			(a, b) => new Date(b.periodStart).getTime() - new Date(a.periodStart).getTime()
+		);
 	}, [bills]);
 
-	const chronologicalBills = useMemo(() => {
-		return sortedBills.filter((b) => b.generationKwh !== null && b.generationKwh !== undefined);
+	// ── Chronological bills for Monthly Generation Bar Chart (oldest -> newest) ──
+	const sortedBills = useMemo(() => {
+		return [...uniqueBills].sort(
+			(a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime()
+		);
+	}, [uniqueBills]);
+
+	// Filter valid generation bills
+	const validGenBills = useMemo(() => {
+		return sortedBills.filter(
+			(b) => b.generationKwh !== null && b.generationKwh !== undefined && b.generationKwh > 0
+		);
 	}, [sortedBills]);
 
-	const maxGenValue = useMemo(() => {
-		if (chronologicalBills.length === 0) return 600;
-		const max = Math.max(...chronologicalBills.map((b) => b.generationKwh ?? 0));
-		return Math.max(max, 100);
-	}, [chronologicalBills]);
+	// Display the most recent 5 to 6 monthly generation records (strictly unique months)
+	const recentMonthlyBills = useMemo(() => {
+		if (validGenBills.length === 0) return [];
+		return validGenBills.slice(-6);
+	}, [validGenBills]);
 
-	const bestBill = useMemo(() => {
-		if (chronologicalBills.length === 0) return null;
-		return [...chronologicalBills].sort((a, b) => (b.generationKwh ?? 0) - (a.generationKwh ?? 0))[0];
-	}, [chronologicalBills]);
+	const maxChartGenValue = useMemo(() => {
+		if (recentMonthlyBills.length === 0) return 600;
+		const max = Math.max(...recentMonthlyBills.map((b) => b.generationKwh ?? 0));
+		return Math.max(max * 1.15, 100);
+	}, [recentMonthlyBills]);
 
-	const activeGraphBill = useMemo(() => {
-		if (chronologicalBills.length === 0) return null;
-		if (selectedGraphBillId) {
-			return chronologicalBills.find((b) => b.id === selectedGraphBillId) ?? chronologicalBills[chronologicalBills.length - 1];
-		}
-		return chronologicalBills[chronologicalBills.length - 1];
-	}, [chronologicalBills, selectedGraphBillId]);
+	// Average monthly generation for displayed period
+	const avgMonthlyGen = useMemo(() => {
+		if (recentMonthlyBills.length === 0) return null;
+		const sum = recentMonthlyBills.reduce((s, b) => s + (b.generationKwh ?? 0), 0);
+		return Math.round(sum / recentMonthlyBills.length);
+	}, [recentMonthlyBills]);
 
-	// ── Care Next Task Helper (Aligned with CareScreen) ──
+	// Average bill amount for comparison
+	const avgBillAmount = useMemo(() => {
+		if (uniqueBills.length <= 1) return null;
+		const sum = uniqueBills.reduce((s, b) => s + b.billAmount, 0);
+		return sum / uniqueBills.length;
+	}, [uniqueBills]);
+
+	// ── Care Next Task Helper ──
 	const careNextTask = useMemo(() => {
 		const isAttentionNeeded =
 			careAssessment.state === "Cleaning recommended" ||
 			careAssessment.state === "Cleaning check recommended" ||
 			careAssessment.state === "Watch";
+
 		if (isAttentionNeeded) {
 			return {
 				isAttentionNeeded: true,
 				title: "Wash solar panels",
-				dueText: "Due today",
+				dueText: "Action recommended",
 			};
 		}
+
 		const daysLeft = 30 - (careAssessment.daysSinceLastClean || 0);
 		if (daysLeft <= 0) {
 			return {
@@ -118,1621 +201,1145 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 		};
 	}, [careAssessment.state, careAssessment.daysSinceLastClean]);
 
-	const bill = bills.length > 0 ? bills[0] : null;
+	// Latest bill record (from deduplicated bills)
+	const latestBill = uniqueBills.length > 0 ? uniqueBills[0] : null;
 
-	if (!bill) {
+	if (!latestBill) {
 		return <EmptyState onAddBill={onAddBill} />;
 	}
 
-	const days = bill.billingDays || 31;
-	const avgPerDay = bill.generationKwh !== null ? (bill.generationKwh / days).toFixed(1) : null;
+	// ── Energy Calculations (Preserving Single Source of Truth) ──
+	const isPartialMonth =
+		latestBill.billingDays && latestBill.billingDays < 25 && latestBill.billingDays > 0;
+	const periodLabel = isPartialMonth ? `${latestBill.period} (Month to date)` : latestBill.period;
 
-	const settlement = profile.settlementRateInr
-		? projectSettlement(bill.closingCreditKwh, profile.settlementRateInr, "FY 2026-27 (1 Apr – 31 Mar)", "31 May 2027")
-		: null;
+	// Daily generation rate
+	const days = latestBill.billingDays || 31;
+	const avgDailyGen =
+		latestBill.generationKwh !== null && days > 0
+			? (latestBill.generationKwh / days).toFixed(1)
+			: null;
 
-	// ── Aggregates ──
-	const allTimeGeneration = bills.reduce((sum, b) => sum + (b.generationKwh ?? 0), 0);
-	const allTimeImport = bills.reduce((sum, b) => sum + b.importKwh, 0);
-	const allTimeExport = bills.reduce((sum, b) => sum + b.exportKwh, 0);
-	const allTimeDirectUse = bills.reduce((sum, b) => sum + (b.directSolarUseKwh ?? 0), 0);
+	// Helper to safely get solar generation for any bill
+	const getBillGeneration = (b: SolarBill): number => {
+		if (b.generationKwh !== null && b.generationKwh !== undefined && b.generationKwh > 0) {
+			return b.generationKwh;
+		}
+		if (b.directSolarUseKwh !== null && b.directSolarUseKwh !== undefined && b.directSolarUseKwh > 0) {
+			return b.directSolarUseKwh + (b.exportKwh || 0);
+		}
+		return b.exportKwh || 0;
+	};
 
-	const displayGen = flowScope === "month" ? bill.generationKwh : allTimeGeneration;
-	const displayImp = flowScope === "month" ? bill.importKwh : allTimeImport;
-	const displayExp = flowScope === "month" ? bill.exportKwh : allTimeExport;
-	const displayDirect = flowScope === "month" ? bill.directSolarUseKwh : allTimeDirectUse;
+	// Year scope: past 12 records (or all bills in current list)
+	const yearBills = useMemo(() => {
+		return uniqueBills.slice(0, 12);
+	}, [uniqueBills]);
 
-	// ── Derived home consumption & solar self-sufficiency ──
-	const displayHomeConsumption =
+	// Aggregates for Year scope (using deduplicated bills)
+	const yearGeneration = useMemo(() => {
+		return yearBills.reduce((sum, b) => sum + getBillGeneration(b), 0);
+	}, [yearBills]);
+
+	const yearExport = useMemo(() => {
+		return yearBills.reduce((sum, b) => sum + (b.exportKwh || 0), 0);
+	}, [yearBills]);
+
+	const yearImport = useMemo(() => {
+		return yearBills.reduce((sum, b) => sum + (b.importKwh || 0), 0);
+	}, [yearBills]);
+
+	const yearDirectUse = useMemo(() => {
+		return yearBills.reduce((sum, b) => {
+			const direct = b.directSolarUseKwh ?? Math.max(0, getBillGeneration(b) - (b.exportKwh || 0));
+			return sum + direct;
+		}, 0);
+	}, [yearBills]);
+
+	// Scope values
+	const activeGen =
 		flowScope === "month"
-			? (bill.estimatedTotalConsumptionKwh ?? (displayDirect ?? 0) + displayImp)
-			: allTimeDirectUse + allTimeImport;
+			? getBillGeneration(latestBill)
+			: yearGeneration;
 
-	const directSolarUse =
-		displayGen !== null && displayGen > 0 ? Math.max(0, displayGen - displayExp) : (displayDirect ?? 0);
+	const activeExport =
+		flowScope === "month"
+			? latestBill.exportKwh
+			: yearExport;
 
+	const activeImport =
+		flowScope === "month"
+			? latestBill.importKwh
+			: yearImport;
+
+	// Direct solar used at home: max(0, gen - export)
+	const activeUsedAtHome =
+		flowScope === "month"
+			? (latestBill.directSolarUseKwh ?? (activeGen > 0 ? Math.max(0, activeGen - activeExport) : 0))
+			: (yearDirectUse > 0 ? yearDirectUse : Math.max(0, yearGeneration - yearExport));
+
+	// Total home consumption = direct solar use + grid import
+	const activeHomeConsumption =
+		flowScope === "month"
+			? (latestBill.estimatedTotalConsumptionKwh ?? (activeUsedAtHome + activeImport))
+			: (activeUsedAtHome + activeImport);
+
+	// Percentage of home electricity supplied directly by solar
 	const selfSufficiencyPct =
-		displayHomeConsumption > 0
-			? Math.min(100, Math.max(0, Math.round((directSolarUse / displayHomeConsumption) * 100)))
+		activeHomeConsumption > 0
+			? Math.min(100, Math.round((activeUsedAtHome / activeHomeConsumption) * 100))
 			: 0;
 
-	const billCount = Math.max(1, bills.length);
-	const genBillsCount = Math.max(1, bills.filter((b) => b.generationKwh !== null && b.generationKwh !== undefined).length);
-	const allTimeGenAvgPerMonth = (allTimeGeneration / genBillsCount).toFixed(0);
-	const allTimeHomeAvgPerMonth = (displayHomeConsumption / billCount).toFixed(0);
+	// Energy distribution percentages (share of solar generated)
+	const totalSolarForDist = activeUsedAtHome + activeExport > 0
+		? activeUsedAtHome + activeExport
+		: Math.max(1, activeGen);
 
-	const remainingBankedKwh = Math.max(0, displayExp - displayImp);
-	const netGridKwh = displayExp - displayImp;
-	const energyDistTotal = displayHomeConsumption + remainingBankedKwh;
-	const homeUsagePct = energyDistTotal > 0 ? Math.round((displayHomeConsumption / energyDistTotal) * 100) : 0;
-	const bankedSharePct = energyDistTotal > 0 ? Math.max(0, 100 - homeUsagePct) : 0;
+	const usedAtHomePct =
+		totalSolarForDist > 0
+			? Math.min(100, Math.round((activeUsedAtHome / totalSolarForDist) * 100))
+			: 0;
+	const exportedPct = Math.max(0, 100 - usedAtHomePct);
 
-	const displayClosingCredit = bill.closingCreditKwh;
+	// Bill status comparison
+	let billStatusBadge = "Normal";
+	let billStatusColor = COLORS.success;
+	let billStatusBg = "#ECFDF5";
+
+	if (latestBill.closingCreditKwh > 0 && latestBill.billAmount <= 300) {
+		billStatusBadge = "Credit Banked";
+		billStatusColor = COLORS.gold;
+		billStatusBg = "#FFFBEB";
+	} else if (avgBillAmount !== null && latestBill.billAmount > avgBillAmount * 1.25) {
+		billStatusBadge = "Higher";
+		billStatusColor = "#EF4444";
+		billStatusBg = "#FEF2F2";
+	}
 
 	return (
 		<ScrollView
 			style={styles.scroll}
 			contentContainerStyle={styles.content}
-			refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[COLORS.gold]} />}
+			refreshControl={
+				<RefreshControl
+					refreshing={isRefreshing}
+					onRefresh={onRefresh}
+					colors={[COLORS.gold]}
+				/>
+			}
 			showsVerticalScrollIndicator={false}
 		>
-			{/* ─── 1. Energy Overview ─── */}
-			<Card
-				title="Energy Overview"
-				subtitle={flowScope === "month" ? `${bill.period} · Latest Bill` : `Total of ${bills.length} billing periods`}
-				style={styles.cardSpacing}
-				badge={
-					bills.length > 1 ? (
-						<View style={styles.scopeToggle}>
-							<TouchableOpacity
-								id="btn-flow-scope-month"
-								style={[styles.scopeBtn, flowScope === "month" && styles.scopeBtnActive]}
-								onPress={() => setFlowScope("month")}
-							>
-								<Text style={[styles.scopeBtnText, flowScope === "month" && styles.scopeBtnTextActive]}>Month</Text>
-							</TouchableOpacity>
-							<TouchableOpacity
-								id="btn-flow-scope-all"
-								style={[styles.scopeBtn, flowScope === "all" && styles.scopeBtnActive]}
-								onPress={() => setFlowScope("all")}
-							>
-								<Text style={[styles.scopeBtnText, flowScope === "all" && styles.scopeBtnTextActive]}>All ({bills.length})</Text>
-							</TouchableOpacity>
-						</View>
-					) : (
-						<Badge label={bill.period} color={COLORS.gold} />
-					)
-				}
-			>
-				<View style={styles.eoContainer}>
-					{/* Row 1: Generation & Home Use (Spacious Tiles with Icons) */}
-					<View style={styles.eoRow}>
-						<View style={styles.eoTile}>
-							<View style={styles.eoTileHeader}>
-								<View style={[styles.eoIconBadge, { backgroundColor: "#FEF3C7" }]}>
-									<Ionicons name="sunny" size={16} color="#D97706" />
-								</View>
-								<Text style={styles.eoTileLabel} numberOfLines={1}>Solar Generated</Text>
-							</View>
-							<View style={styles.eoTileValueRow}>
-								<Text style={[styles.eoTileValue, { color: "#D97706" }]}>
-									{displayGen !== null ? displayGen.toFixed(0) : "—"}
-								</Text>
-								<Text style={styles.eoTileUnit}>kWh</Text>
-							</View>
-							<Text style={styles.eoTileNote}>
-								{flowScope === "all"
-									? `${allTimeGenAvgPerMonth} kWh/mo avg`
-									: (avgPerDay ? `${avgPerDay} kWh/day` : "Goa meter reading")}
-							</Text>
-						</View>
-
-						<View style={styles.eoTile}>
-							<View style={styles.eoTileHeader}>
-								<View style={[styles.eoIconBadge, { backgroundColor: "#DCFCE7" }]}>
-									<Ionicons name="home" size={16} color="#059669" />
-								</View>
-								<Text style={styles.eoTileLabel} numberOfLines={1}>Home Consumed</Text>
-							</View>
-							<View style={styles.eoTileValueRow}>
-								<Text style={[styles.eoTileValue, { color: "#059669" }]}>
-									{displayHomeConsumption.toFixed(0)}
-								</Text>
-								<Text style={styles.eoTileUnit}>kWh</Text>
-							</View>
-							<Text style={styles.eoTileNote}>
-								{flowScope === "all" ? `${allTimeHomeAvgPerMonth} kWh/mo avg` : `${selfSufficiencyPct}% from solar`}
-							</Text>
-						</View>
+			{/* ══════════════════════════════════════════════════════════
+			    1. MAIN HERO CARD — THIS MONTH
+			══════════════════════════════════════════════════════════ */}
+			<View style={styles.heroCard}>
+				{/* Top Hero Row: Headline + House Mascot */}
+				<View style={styles.heroTopRow}>
+					<View style={styles.heroTextCol}>
+						<Text style={styles.heroPeriodLabel}>
+							{flowScope === "year"
+								? (yearBills.length > 1 ? `Past ${yearBills.length} Months` : "Past Year")
+								: periodLabel}
+						</Text>
+						<Text style={styles.heroHeadline}>
+							{"Your home\nis solar powered"}
+						</Text>
+						<Text style={styles.heroSubtext}>
+							Clean energy for a brighter tomorrow
+						</Text>
 					</View>
 
-					{/* ── Interactive Energy Distribution Flow ── */}
-					<View style={styles.eoFlowCard}>
-						<View style={styles.eoFlowHeader}>
-							<View style={{ flex: 1, marginRight: SPACING.sm }}>
-								<Text style={styles.eoFlowTitle}>Energy Distribution</Text>
-								<Text style={styles.eoFlowSubtitle} numberOfLines={1}>
-									Home consumption vs. bank storage grid
-								</Text>
+					{/* Friendly Solar House Mascot */}
+					<Animated.View
+						style={[
+							styles.mascotWrap,
+							{ transform: [{ translateY: floatAnim }] },
+						]}
+					>
+						<Image
+							source={MASCOT_HAPPY}
+							style={styles.mascotImage}
+							resizeMode="contain"
+						/>
+					</Animated.View>
+				</View>
+
+				{/* Two Child Metric Cards Inside Hero */}
+				<View style={styles.heroMetricsRow}>
+					{/* Metric 1: Solar Generated (Warm Orange) */}
+					<View style={styles.heroMetricCardOrange}>
+						<View style={styles.heroMetricHeader}>
+							<View style={styles.heroMetricIconWrapOrange}>
+								<Ionicons name="sunny" size={17} color="#EA580C" />
 							</View>
+							<Text style={styles.heroMetricLabel} numberOfLines={1}>
+								Solar generated
+							</Text>
+						</View>
+						<View style={styles.heroMetricValueRow}>
+							<Text style={styles.heroMetricValueOrange}>
+								{activeGen > 0 ? Math.round(activeGen) : "—"}
+							</Text>
+							<Text style={styles.heroMetricUnit}>kWh</Text>
+						</View>
+						<Text style={styles.heroMetricSubOrange}>
+							{flowScope === "year"
+								? `${yearBills.length} months combined`
+								: (avgDailyGen ? `${avgDailyGen} kWh/day` : "Goa meter reading")}
+						</Text>
+					</View>
+
+					{/* Metric 2: Home Consumed (Fresh Green) */}
+					<View style={styles.heroMetricCardGreen}>
+						<View style={styles.heroMetricHeader}>
+							<View style={styles.heroMetricIconWrapGreen}>
+								<Ionicons name="home" size={16} color="#059669" />
+							</View>
+							<Text style={styles.heroMetricLabel} numberOfLines={1}>
+								Home consumed
+							</Text>
+						</View>
+						<View style={styles.heroMetricValueRow}>
+							<Text style={styles.heroMetricValueGreen}>
+								{Math.round(activeHomeConsumption)}
+							</Text>
+							<Text style={styles.heroMetricUnit}>kWh</Text>
+						</View>
+						<Text style={styles.heroMetricSubGreen}>
+							{`${selfSufficiencyPct}% from solar`}
+						</Text>
+					</View>
+				</View>
+			</View>
+
+			{/* ══════════════════════════════════════════════════════════
+			    2. ENERGY DISTRIBUTION — WHERE YOUR ENERGY WENT
+			══════════════════════════════════════════════════════════ */}
+			<View style={styles.card}>
+				{/* Header with Title & Scope Toggle */}
+				<View style={styles.distHeaderRow}>
+					<View style={{ flex: 1, paddingRight: 8 }}>
+						<Text style={styles.cardTitle}>Where your energy went</Text>
+						<Text style={styles.cardSubtitle}>
+							{flowScope === "year"
+								? `Total solar generated: ${Math.round(activeGen)} kWh (Year)`
+								: `Total solar generated: ${Math.round(activeGen)} kWh`}
+						</Text>
+					</View>
+
+					{/* Scope toggle (Month vs Year) */}
+					{uniqueBills.length > 1 && (
+						<View style={styles.scopeToggle}>
 							<TouchableOpacity
+								id="btn-dist-scope-month"
+								style={[styles.scopeBtn, flowScope === "month" && styles.scopeBtnActive]}
+								onPress={() => setFlowScope("month")}
 								activeOpacity={0.7}
-								onPress={() => setActiveCompareTab(activeCompareTab === "home" ? "export" : "home")}
-								style={[
-									styles.eoFlowBadge,
-									activeCompareTab === "export" && {
-										backgroundColor: "#E0F2FE",
-										borderColor: "#BAE6FD",
-									},
-								]}
 							>
 								<Text
 									style={[
-										styles.eoFlowBadgeText,
-										activeCompareTab === "export" && { color: "#0284C7" },
+										styles.scopeBtnText,
+										flowScope === "month" && styles.scopeBtnTextActive,
 									]}
 								>
-									{activeCompareTab === "home" ? `${homeUsagePct}% Home Use` : `${bankedSharePct}% Sent to Bank`}
+									Month
+								</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								id="btn-dist-scope-year"
+								style={[styles.scopeBtn, flowScope === "year" && styles.scopeBtnActive]}
+								onPress={() => setFlowScope("year")}
+								activeOpacity={0.7}
+							>
+								<Text
+									style={[
+										styles.scopeBtnText,
+										flowScope === "year" && styles.scopeBtnTextActive,
+									]}
+								>
+									Year
 								</Text>
 							</TouchableOpacity>
 						</View>
+					)}
+				</View>
 
-						{/* Dual-color Split Bar (Tap to select) */}
-						<View style={styles.eoFlowTrack}>
-							<TouchableOpacity
-								id="btn-eo-track-home"
-								activeOpacity={0.8}
-								onPress={() => setActiveCompareTab("home")}
-								style={[
-									styles.eoFlowSegmentHome,
-									{ flex: Math.max(0.05, displayHomeConsumption) },
-									activeCompareTab === "export" && { opacity: 0.45 },
-								]}
-							/>
-							<TouchableOpacity
-								id="btn-eo-track-export"
-								activeOpacity={0.8}
-								onPress={() => setActiveCompareTab("export")}
-								style={[
-									styles.eoFlowSegmentExport,
-									{ flex: Math.max(0.05, remainingBankedKwh) },
-									activeCompareTab === "home" && { opacity: 0.45 },
-								]}
-							/>
-						</View>
-
-						{/* Interactive Pill Tabs */}
-						<View style={styles.eoFlowTabsRow}>
-							<TouchableOpacity
-								id="btn-eo-select-home"
-								activeOpacity={0.7}
-								onPress={() => setActiveCompareTab("home")}
-								style={[
-									styles.eoFlowTab,
-									activeCompareTab === "home" && styles.eoFlowTabActiveHome,
-								]}
-							>
-								<View style={styles.eoFlowTabHeader}>
-									<View style={[styles.eoFlowTabDot, { backgroundColor: "#059669" }]} />
-									<Text style={styles.eoFlowTabLabel} numberOfLines={1}>Used by Home</Text>
-								</View>
-								<View style={styles.eoFlowTabValRow}>
-									<Text style={[styles.eoFlowTabVal, activeCompareTab === "home" && { color: "#065F46" }]}>
-										{displayHomeConsumption.toFixed(0)}
-									</Text>
-									<Text style={styles.eoFlowTabUnit}>kWh</Text>
-									<Text style={styles.eoFlowTabShare}>({homeUsagePct}%)</Text>
-								</View>
-							</TouchableOpacity>
-
-							<TouchableOpacity
-								id="btn-eo-select-export"
-								activeOpacity={0.7}
-								onPress={() => setActiveCompareTab("export")}
-								style={[
-									styles.eoFlowTab,
-									activeCompareTab === "export" && styles.eoFlowTabActiveExport,
-								]}
-							>
-								<View style={styles.eoFlowTabHeader}>
-									<View style={[styles.eoFlowTabDot, { backgroundColor: "#0284C7" }]} />
-									<Text style={styles.eoFlowTabLabel} numberOfLines={1}>Sent to Bank</Text>
-								</View>
-								<View style={styles.eoFlowTabValRow}>
-									<Text style={[styles.eoFlowTabVal, activeCompareTab === "export" && { color: "#0369A1" }]}>
-										{remainingBankedKwh.toFixed(0)}
-									</Text>
-									<Text style={styles.eoFlowTabUnit}>kWh</Text>
-									<Text style={styles.eoFlowTabShare}>({bankedSharePct}%)</Text>
-								</View>
-							</TouchableOpacity>
-						</View>
-
-						{/* Dynamic Contextual Detail Banner */}
-						<View
-							style={[
-								styles.eoFlowCallout,
-								activeCompareTab === "home" ? styles.eoFlowCalloutHome : styles.eoFlowCalloutExport,
-							]}
-						>
-							<Ionicons
-								name={activeCompareTab === "home" ? "home-outline" : "battery-charging-outline"}
-								size={14}
-								color={activeCompareTab === "home" ? "#059669" : "#0284C7"}
-							/>
-							<Text style={styles.eoFlowCalloutText} numberOfLines={2}>
-								{activeCompareTab === "home"
-									? `Direct solar (${directSolarUse.toFixed(0)} kWh) covers ${selfSufficiencyPct}% of home use · ${displayImp.toFixed(0)} kWh drawn from grid`
-									: `${displayExp.toFixed(0)} kWh export − ${displayImp.toFixed(0)} kWh import = ${remainingBankedKwh.toFixed(0)} kWh net surplus stored in grid`}
-							</Text>
-						</View>
+				{/* Simple Horizontal Distribution Bar */}
+				<View style={styles.distTrack}>
+					{/* Green Segment: Used at Home */}
+					<View
+						style={[
+							styles.distSegmentHome,
+							{ flex: Math.max(0.08, usedAtHomePct) },
+						]}
+					>
+						{usedAtHomePct >= 18 && (
+							<Text style={styles.distBarPctText}>{`${usedAtHomePct}%`}</Text>
+						)}
 					</View>
 
-					{/* ── Expandable Energy Ledger Drawer ── */}
-					<View style={styles.ledgerSection}>
-						<TouchableOpacity
-							id="btn-toggle-energy-ledger"
-							style={styles.expandLedgerBtn}
-							onPress={() => setShowBreakdown(!showBreakdown)}
-							activeOpacity={0.7}
-						>
-							<View style={styles.expandLedgerLeft}>
-								<Ionicons name="receipt-outline" size={15} color={COLORS.textSub} />
-								<Text style={styles.expandLedgerText}>
-									{showBreakdown ? "Hide Full Energy Ledger" : "View Full Energy Ledger"}
-								</Text>
-							</View>
-							<View style={styles.expandLedgerRight}>
-								<Text style={styles.expandLedgerHint}>
-									{showBreakdown ? "Less" : "Audit"}
-								</Text>
-								<Ionicons
-									name={showBreakdown ? "chevron-up" : "chevron-down"}
-									size={15}
-									color={COLORS.textMuted}
-								/>
-							</View>
-						</TouchableOpacity>
-
-						{showBreakdown && (
-							<View style={styles.ledgerDrawer}>
-								<LedgerRow
-									label="Solar Generation"
-									value={`${(displayGen ?? 0).toFixed(0)} kWh`}
-									valueColor="#D97706"
-								/>
-								<LedgerRow
-									label="Direct Daytime Solar Used"
-									value={`${directSolarUse.toFixed(0)} kWh`}
-									valueColor="#059669"
-								/>
-								<LedgerRow
-									label="Grid Power Imported"
-									value={`${displayImp.toFixed(0)} kWh`}
-									valueColor={COLORS.text}
-								/>
-								<LedgerRow
-									label="Total Home Consumption"
-									value={`${displayHomeConsumption.toFixed(0)} kWh`}
-									valueColor="#059669"
-								/>
-								<LedgerRow
-									label="Gross Solar Exported"
-									value={`${displayExp.toFixed(0)} kWh`}
-									valueColor="#0284C7"
-								/>
-								<LedgerRow
-									label="Net Surplus This Cycle"
-									value={`${netGridKwh >= 0 ? `+${remainingBankedKwh.toFixed(0)}` : `-${Math.abs(netGridKwh).toFixed(0)}`} kWh`}
-									valueColor={netGridKwh >= 0 ? COLORS.success : COLORS.warning}
-								/>
-								<LedgerRow
-									label="Banked Energy Credit Balance"
-									value={`${displayClosingCredit} kWh`}
-									valueColor="#0284C7"
-								/>
-								<LedgerRow
-									label="Solar Self-Sufficiency"
-									value={`${selfSufficiencyPct}%`}
-									valueColor={COLORS.success}
-								/>
-							</View>
+					{/* Blue Segment: Exported to Grid */}
+					<View
+						style={[
+							styles.distSegmentExport,
+							{ flex: Math.max(0.08, exportedPct) },
+						]}
+					>
+						{exportedPct >= 18 && (
+							<Text style={styles.distBarPctText}>{`${exportedPct}%`}</Text>
 						)}
 					</View>
 				</View>
-			</Card>
 
-			{/* ─── 2. How Your System Is Doing (Simple for Everyday Users) ─── */}
-			{bills.length > 0 && (
-				<View style={styles.smartHeroCard}>
-					{/* Header */}
-					<View style={styles.smartHeroHeader}>
-						<View style={{ flex: 1, paddingRight: 8 }}>
-							<Text style={styles.smartHeroTitle}>How your system is doing</Text>
-							<Text style={styles.smartHeroSubtitle}>
-								Based on your {bill.period || 'latest'} bill and generation
-							</Text>
+				{/* Two Clearly Labelled Metric Boxes */}
+				<View style={styles.distBoxesRow}>
+					{/* Box 1: Used at home */}
+					<View style={styles.distBoxHome}>
+						<View style={styles.distBoxHeader}>
+							<View style={styles.distDotHome} />
+							<Text style={styles.distBoxLabel}>Used at home</Text>
 						</View>
-						<View
-							style={[
-								styles.smartHeroHealthBadge,
-								smartAnalysis.actionCheck.severity === 'warning'
-									? styles.healthBadgeWarning
-									: styles.healthBadgeSuccess,
-							]}
-						>
-							<Ionicons
-								name={
-									smartAnalysis.actionCheck.severity === 'warning'
-										? 'alert-circle'
-										: 'checkmark-circle'
-								}
-								size={14}
-								color={
-									smartAnalysis.actionCheck.severity === 'warning'
-										? '#DC2626'
-										: '#16A34A'
-								}
-							/>
-							<Text
-								style={[
-									styles.smartHeroHealthText,
-									smartAnalysis.actionCheck.severity === 'warning'
-										? { color: '#DC2626' }
-										: { color: '#16A34A' },
-								]}
-							>
-								{smartAnalysis.actionCheck.severity === 'warning'
-									? 'Attention needed'
-									: 'Looking good'}
+						<View style={styles.distBoxValRow}>
+							<Text style={styles.distBoxVal}>
+								{Math.round(activeUsedAtHome)}
+								<Text style={styles.distBoxUnit}> kWh</Text>
 							</Text>
+							<Text style={styles.distBoxShareHome}>{`${usedAtHomePct}%`}</Text>
 						</View>
 					</View>
 
-					{/* 2 Clean Side-by-Side Metric Cards */}
-					<View style={styles.smartMetricsRow}>
-						{/* Card 1: Electricity bill */}
-						<TouchableOpacity
-							style={styles.smartMetricBox}
-							onPress={onNavigateAnalytics}
-							activeOpacity={0.8}
-						>
-							<View style={styles.smartMetricTop}>
-								<View style={styles.smartBillIcon}>
-									<Ionicons name="document-text" size={15} color="#2563EB" />
-								</View>
-								<Text style={styles.smartMetricLabel}>Electricity bill</Text>
-							</View>
-							<Text style={styles.smartMetricValue}>
-								₹{Math.round(bill.billAmount).toLocaleString('en-IN')}
+					{/* Box 2: Exported to grid */}
+					<View style={styles.distBoxExport}>
+						<View style={styles.distBoxHeader}>
+							<View style={styles.distDotExport} />
+							<Text style={styles.distBoxLabel}>Exported to grid</Text>
+						</View>
+						<View style={styles.distBoxValRow}>
+							<Text style={styles.distBoxVal}>
+								{Math.round(activeExport)}
+								<Text style={styles.distBoxUnit}> kWh</Text>
 							</Text>
-							<View style={styles.smartStatusChip}>
-								<Ionicons name="checkmark" size={11} color="#16A34A" />
-								<Text style={styles.smartStatusChipText}>
-									{smartAnalysis.billAnalysis.statusLabel || 'About normal'}
-								</Text>
-							</View>
-						</TouchableOpacity>
-
-						{/* Card 2: Solar generated */}
-						<TouchableOpacity
-							style={styles.smartMetricBox}
-							onPress={onNavigateAnalytics}
-							activeOpacity={0.8}
-						>
-							<View style={styles.smartMetricTop}>
-								<View style={styles.smartSolarIcon}>
-									<Ionicons name="sunny" size={15} color="#EA580C" />
-								</View>
-								<Text style={styles.smartMetricLabel}>Solar output</Text>
-							</View>
-							<Text style={styles.smartMetricValue}>
-								{bill.generationKwh ?? 0} <Text style={styles.smartMetricUnit}>kWh</Text>
-							</Text>
-							<View style={styles.smartStatusChip}>
-								<Ionicons name="checkmark-circle" size={11} color="#16A34A" />
-								<Text style={styles.smartStatusChipText}>
-									{smartAnalysis.solarAnalysis.status === 'lower' ? 'Below target' : 'Good output'}
-								</Text>
-							</View>
-						</TouchableOpacity>
+							<Text style={styles.distBoxShareExport}>{`${exportedPct}%`}</Text>
+						</View>
 					</View>
+				</View>
 
-					{/* Friendly Recommendation Banner */}
-					<TouchableOpacity
-						id="btn-smart-insight-banner"
-						style={[
-							styles.smartFriendlyBanner,
-							smartAnalysis.actionCheck.severity === 'warning'
-								? styles.friendlyBannerWarning
-								: styles.friendlyBannerSuccess,
-						]}
-						onPress={onNavigateAnalytics}
-						activeOpacity={0.8}
-					>
-						<Ionicons
-							name={
-								smartAnalysis.actionCheck.severity === 'warning'
-									? 'alert-circle'
-									: 'checkmark-circle'
-							}
-							size={16}
-							color={
-								smartAnalysis.actionCheck.severity === 'warning'
-									? '#DC2626'
-									: '#16A34A'
-							}
-						/>
-						<Text
-							style={[
-								styles.smartFriendlyText,
-								smartAnalysis.actionCheck.severity === 'warning'
-									? { color: '#991B1B' }
-									: { color: '#166534' },
-							]}
-							numberOfLines={2}
-						>
-							{smartAnalysis.actionCheck.recommendation}
+				{/* Callout Banner: Solar coverage of home electricity */}
+				<TouchableOpacity
+					id="btn-nav-analytics-callout"
+					style={styles.distCalloutBanner}
+					onPress={onNavigateAnalytics}
+					activeOpacity={0.7}
+				>
+					<Ionicons name="leaf" size={17} color="#10B981" />
+					<Text style={styles.distCalloutText}>
+						{"Solar covered "}
+						<Text style={styles.distCalloutBold}>{`${selfSufficiencyPct}%`}</Text>
+						{" of your home’s total electricity use."}
+					</Text>
+					<Ionicons name="chevron-forward" size={15} color="#94A3B8" />
+				</TouchableOpacity>
+			</View>
+
+			{/* ══════════════════════════════════════════════════════════
+			    3. MONTHLY SOLAR GENERATION (MONTH-WISE ONLY)
+			══════════════════════════════════════════════════════════ */}
+			<View style={styles.card}>
+				<View style={styles.chartHeaderRow}>
+					<View style={{ flex: 1 }}>
+						<Text style={styles.cardTitle}>Monthly Solar Generation</Text>
+						<Text style={styles.cardSubtitle}>
+							{avgMonthlyGen !== null
+								? `Avg ${avgMonthlyGen} kWh/month · Recent months`
+								: "Recent monthly solar production"}
 						</Text>
-						<Ionicons name="chevron-forward" size={15} color="#94A3B8" />
+					</View>
+
+					<TouchableOpacity
+						id="btn-view-analytics-chart"
+						style={styles.viewAllBtn}
+						onPress={onNavigateAnalytics}
+						activeOpacity={0.7}
+					>
+						<Text style={styles.viewAllBtnText}>View all</Text>
+						<Ionicons name="chevron-forward" size={14} color="#EA580C" />
 					</TouchableOpacity>
 				</View>
-			)}
 
-			{/* ─── 3. Generation Graph ─── */}
-			{chronologicalBills.length > 0 && (
-				<Card
-					title="Solar Generation"
-					subtitle={
-						chronologicalBills.length > 1
-							? `${chronologicalBills.length} billing cycles · Avg ${allTimeGenAvgPerMonth} kWh/mo`
-							: `${bill.period} · Latest billing reading`
-					}
-					style={styles.cardSpacing}
-					badge={
-						bestBill?.generationKwh ? (
-							<Badge label={`Peak ${bestBill.generationKwh.toFixed(0)} kWh`} color={COLORS.gold} />
-						) : undefined
-					}
-				>
-					{/* Visual Bar Graph */}
+				{/* Vertical Bar Chart (5–6 recent months) */}
+				{recentMonthlyBills.length > 0 ? (
 					<View style={styles.chartContainer}>
-						{/* Average Benchmark Line (shown if 2+ bills) */}
-						{chronologicalBills.length > 1 && (
-							<View
-								style={[
-									styles.chartAvgLine,
-									{
-										bottom: `${Math.min(88, Math.max(16, (Number(allTimeGenAvgPerMonth) / maxGenValue) * 100))}%`,
-									},
-								]}
-							>
-								<View style={styles.chartAvgDashes} />
-								<Text style={styles.chartAvgText}>Avg {allTimeGenAvgPerMonth} kWh</Text>
-							</View>
-						)}
-
-						{/* Bars Row */}
 						<View style={styles.chartBarsRow}>
-							{chronologicalBills.map((b) => {
-								const isSelected = activeGraphBill?.id === b.id;
-								const genVal = b.generationKwh ?? 0;
-								const heightPct = Math.min(100, Math.max(14, Math.round((genVal / maxGenValue) * 100)));
-								const bDays = b.billingDays || 31;
-								const dayRate = (genVal / bDays).toFixed(1);
+							{recentMonthlyBills.map((b, idx) => {
+								const isLatest = idx === recentMonthlyBills.length - 1;
+								const isSelected = selectedBarBillId === b.id;
+								const genValue = b.generationKwh ?? 0;
+								const heightPct = Math.min(
+									100,
+									Math.max(14, Math.round((genValue / maxChartGenValue) * 100))
+								);
+								const { month, year } = parseMonthYearParts(b.period);
 
 								return (
 									<TouchableOpacity
-										key={b.id}
-										id={`btn-graph-bar-${b.id}`}
-										activeOpacity={0.75}
-										onPress={() => setSelectedGraphBillId(b.id)}
-										style={styles.chartBarCol}
+										key={b.id || idx}
+										id={`btn-chart-bar-${idx}`}
+										style={styles.chartCol}
+										onPress={() =>
+											setSelectedBarBillId(isSelected ? null : b.id)
+										}
+										activeOpacity={0.8}
 									>
-										{/* Value text above bar */}
-										<Text style={[styles.chartBarValText, isSelected && styles.chartBarValTextActive]}>
-											{genVal.toFixed(0)}
+										{/* Value in kWh above bar */}
+										<Text
+											style={[
+												styles.chartValText,
+												isLatest && styles.chartValTextLatest,
+												isSelected && styles.chartValTextSelected,
+											]}
+											numberOfLines={1}
+										>
+											{Math.round(genValue)}
 										</Text>
 
-										{/* Bar track and fill */}
-										<View style={[styles.chartBarTrack, isSelected && styles.chartBarTrackActive]}>
+										{/* Bar Track & Fill */}
+										<View style={styles.chartTrack}>
 											<View
 												style={[
-													styles.chartBarFill,
+													styles.chartFill,
 													{ height: `${heightPct}%` },
-													isSelected ? styles.chartBarFillActive : styles.chartBarFillInactive,
+													isLatest
+														? styles.chartFillLatest
+														: styles.chartFillPrevious,
+													isSelected && styles.chartFillSelected,
 												]}
 											/>
 										</View>
 
-										{/* X Axis Month Label */}
-										<Text style={[styles.chartBarMonthText, isSelected && styles.chartBarMonthTextActive]}>
-											{formatMonthShort(b.period)}
+										{/* Month Label (Stacked for Clean Readability) */}
+										<Text
+											style={[
+												styles.chartMonthText,
+												isLatest && styles.chartMonthTextLatest,
+											]}
+										>
+											{month}
 										</Text>
-										<Text style={styles.chartBarDayRateText}>{dayRate}/d</Text>
+										{year ? (
+											<Text
+												style={[
+													styles.chartYearText,
+													isLatest && styles.chartYearTextLatest,
+												]}
+											>
+												{year}
+											</Text>
+										) : null}
 									</TouchableOpacity>
 								);
 							})}
 						</View>
+
+						{/* Interactive Detail Strip on Bar Tap */}
+						{selectedBarBillId && (
+							(() => {
+								const selBill = recentMonthlyBills.find((b) => b.id === selectedBarBillId);
+								if (!selBill) return null;
+								const selDaily =
+									selBill.generationKwh !== null && (selBill.billingDays || 31) > 0
+										? (selBill.generationKwh / (selBill.billingDays || 31)).toFixed(1)
+										: null;
+								return (
+									<View style={styles.chartSelectedPill}>
+										<View style={styles.chartSelectedIcon}>
+											<Ionicons name="sunny" size={15} color="#EA580C" />
+										</View>
+										<View style={{ flex: 1 }}>
+											<Text style={styles.chartSelectedTitle}>
+												{selBill.period}:{" "}
+												<Text style={{ fontWeight: FONT.bold, color: "#EA580C" }}>
+													{`${Math.round(selBill.generationKwh ?? 0)} kWh`}
+												</Text>
+											</Text>
+											<Text style={styles.chartSelectedSub}>
+												{selDaily ? `${selDaily} kWh/day` : ""}{" "}
+												{selBill.exportKwh > 0 ? `· ${Math.round(selBill.exportKwh)} kWh exported` : ""}
+											</Text>
+										</View>
+									</View>
+								);
+							})()
+						)}
 					</View>
-
-					{/* Selected Month Interactive Detail Pill */}
-					{activeGraphBill && (
-						<View style={styles.chartDetailPill}>
-							<View style={styles.chartDetailPillLeft}>
-								<View style={styles.chartDetailIconWrap}>
-									<Ionicons name="sunny" size={15} color="#D97706" />
-								</View>
-								<View>
-									<Text style={styles.chartDetailPillTitle}>
-										{activeGraphBill.period}:{" "}
-										<Text style={styles.chartDetailPillHighlight}>
-											{activeGraphBill.generationKwh?.toFixed(0)} kWh
-										</Text>
-									</Text>
-									<Text style={styles.chartDetailPillSub}>
-										{((activeGraphBill.generationKwh ?? 0) / (activeGraphBill.billingDays || 31)).toFixed(1)} kWh/day · {activeGraphBill.billingDays || 31} days
-									</Text>
-								</View>
-							</View>
-							{activeGraphBill.exportKwh > 0 && (
-								<View style={styles.chartDetailPillRight}>
-									<Text style={styles.chartDetailExportLabel}>Exported</Text>
-									<Text style={styles.chartDetailExportVal}>{activeGraphBill.exportKwh.toFixed(0)} kWh</Text>
-								</View>
-							)}
-						</View>
-					)}
-				</Card>
-			)}
-
-			{/* ─── 3. Solar Care (Aligned with CareScreen) ─── */}
-			<View style={styles.careHeroCard}>
-				{/* Top Row: Title & Link */}
-				<View style={styles.careHeaderRow}>
-					<View style={{ flex: 1, paddingRight: 8 }}>
-						<Text style={styles.careCardTitle}>Solar Care</Text>
-						<Text style={styles.careCardSubtitle}>Keep your solar system in good shape</Text>
+				) : (
+					<View style={styles.chartEmpty}>
+						<Text style={styles.chartEmptyText}>
+							Monthly generation records will appear as bills are added.
+						</Text>
 					</View>
-					<TouchableOpacity
-						id="btn-view-care"
-						style={styles.careReportPillBtn}
-						onPress={onNavigateCare}
-						activeOpacity={0.7}
-					>
-						<Text style={styles.careReportPillText}>Full report</Text>
-						<Ionicons name="arrow-forward" size={12} color="#EA580C" />
-					</TouchableOpacity>
-				</View>
-
-				{/* 2-Column Split Status Box */}
-				<View
-					style={[
-						styles.careSplitBox,
-						careNextTask.isAttentionNeeded && styles.careSplitBoxWarning,
-					]}
-				>
-					{/* Left Column: Status */}
-					<View style={styles.careStatusLeft}>
-						<Ionicons
-							name={careNextTask.isAttentionNeeded ? "alert-circle" : "checkmark-circle"}
-							size={32}
-							color={careNextTask.isAttentionNeeded ? "#EF4444" : "#13A956"}
-						/>
-						<View style={styles.careStatusTextCol}>
-							<Text
-								style={[
-									styles.careStatusTitle,
-									careNextTask.isAttentionNeeded ? styles.careTitleDanger : styles.careTitleSuccess,
-								]}
-							>
-								{careNextTask.isAttentionNeeded ? "Attention needed" : "System looks good"}
-							</Text>
-							<Text style={styles.careStatusSub} numberOfLines={1}>
-								{careNextTask.isAttentionNeeded
-									? careAssessment.recommendation || "Wash recommended."
-									: "No tasks due today."}
-							</Text>
-						</View>
-					</View>
-
-					{/* Right Column: Next Task */}
-					<View style={styles.careStatusRight}>
-						<View style={styles.careNextTaskCol}>
-							<Text style={styles.careNextTaskLabel}>Next task</Text>
-							<Text style={styles.careNextTaskTitle} numberOfLines={1}>
-								{careNextTask.title}
-							</Text>
-							<Text style={styles.careNextTaskDue} numberOfLines={1}>
-								{careNextTask.dueText}
-							</Text>
-						</View>
-					</View>
-				</View>
-
-				{/* Action Buttons */}
-				<View style={styles.careActionRow}>
-					<TouchableOpacity
-						id="btn-log-clean-home"
-						style={styles.carePrimaryActionBtn}
-						onPress={onLogClean}
-						activeOpacity={0.8}
-					>
-						<Ionicons name="water-outline" size={16} color="#FFFFFF" />
-						<Text style={styles.carePrimaryActionText}>Log Panel Wash</Text>
-					</TouchableOpacity>
-					<TouchableOpacity
-						style={styles.careSecondaryActionBtn}
-						onPress={onNavigateCare}
-						activeOpacity={0.8}
-					>
-						<Ionicons name="calendar-outline" size={15} color="#64748B" />
-						<Text style={styles.careSecondaryActionText}>Care Schedule</Text>
-					</TouchableOpacity>
-				</View>
+				)}
 			</View>
 
-			{/* ─── 4. Banked Credit & Annual Settlement ─── */}
-			<Card
-				title="Banked Credit & Settlement"
-				subtitle="FY 2026-27 · JERC Net Metering"
-				style={styles.cardSpacing}
-				badge={<Badge label={settlement ? "Settles 31 May" : "Annual Settlement"} color={COLORS.info} />}
-			>
-				<View style={styles.settlementCard}>
-					{/* Banked Energy Balance */}
-					<View style={styles.settlementBankedRow}>
-						<View style={styles.settlementIconWrap}>
-							<Ionicons name="battery-charging" size={18} color="#059669" />
+			{/* ══════════════════════════════════════════════════════════
+			    4 & 5. QUICK INFORMATION CARDS (LATEST BILL & SOLAR CARE)
+			══════════════════════════════════════════════════════════ */}
+			<View style={styles.quickCardsRow}>
+				{/* Card 4: Latest Electricity Bill */}
+				<TouchableOpacity
+					id="btn-quick-latest-bill"
+					style={styles.quickCard}
+					onPress={onNavigateBills || onAddBill}
+					activeOpacity={0.7}
+				>
+					<View style={styles.quickCardTop}>
+						<View style={styles.quickIconWrapBlue}>
+							<Ionicons name="document-text" size={18} color="#2563EB" />
 						</View>
-						<View style={styles.settlementBankedCol}>
-							<Text style={styles.settlementBankedLabel}>Banked Credit Balance</Text>
-							<Text style={styles.settlementBankedSub} numberOfLines={1}>
-								{displayExp.toFixed(0)} export − {displayImp.toFixed(0)} import = +{remainingBankedKwh.toFixed(0)} kWh this bill
-							</Text>
-						</View>
-						<View style={styles.settlementBankedValWrap}>
-							<Text style={styles.settlementBankedVal}>
-								{displayClosingCredit}{" "}
-								<Text style={styles.settlementBankedUnit}>kWh</Text>
+						<Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+					</View>
+
+					<Text style={styles.quickCardLabel}>Latest electricity bill</Text>
+					<Text style={styles.quickCardAmount}>
+						{`₹${Math.round(latestBill.billAmount)}`}
+					</Text>
+
+					<View style={styles.quickCardFooter}>
+						<Text style={styles.quickCardPeriod} numberOfLines={1}>
+							{latestBill.period}
+						</Text>
+						<View style={[styles.statusBadge, { backgroundColor: billStatusBg }]}>
+							<Ionicons name="checkmark" size={11} color={billStatusColor} />
+							<Text style={[styles.statusBadgeText, { color: billStatusColor }]}>
+								{billStatusBadge}
 							</Text>
 						</View>
 					</View>
+				</TouchableOpacity>
 
-					{/* Settlement Projection / Rate Details */}
-					{settlement ? (
-						<View style={styles.settlementPayoutBlock}>
-							<View style={styles.settlementDivider} />
-							<View style={styles.settlementMetricsRow}>
-								<View style={styles.settlementMetricCol}>
-									<Text style={styles.settlementDetailLabel}>Projected Payout</Text>
-									<Text style={styles.settlementPayoutVal}>₹{settlement.projectedPayoutInr.toFixed(0)}</Text>
-								</View>
-								<View style={[styles.settlementMetricCol, { alignItems: "center" }]}>
-									<Text style={styles.settlementDetailLabel}>APPC Rate</Text>
-									<Text style={styles.settlementDetailVal}>₹{settlement.ratePerKwh}/kWh</Text>
-								</View>
-								<View style={[styles.settlementMetricCol, { alignItems: "flex-end" }]}>
-									<Text style={styles.settlementDetailLabel}>Settlement Date</Text>
-									<Text style={styles.settlementDetailVal}>31 May 2027</Text>
-								</View>
-							</View>
+				{/* Card 5: Solar Care Next Task */}
+				<TouchableOpacity
+					id="btn-quick-solar-care"
+					style={styles.quickCard}
+					onPress={onNavigateCare}
+					activeOpacity={0.7}
+				>
+					<View style={styles.quickCardTop}>
+						<View style={styles.quickIconWrapAmber}>
+							<Ionicons name="construct" size={17} color="#D97706" />
 						</View>
-					) : (
-						<View style={styles.settlementPromptBlock}>
-							<View style={styles.settlementDivider} />
-							<View style={styles.settlementPromptRow}>
-								<Ionicons name="information-circle-outline" size={16} color={COLORS.info} />
-								<Text style={styles.settlementPromptText}>
-									Set your APPC settlement rate in Settings to calculate your projected annual cash payout for these {displayClosingCredit} banked units.
-								</Text>
-							</View>
-						</View>
-					)}
-				</View>
+						<Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+					</View>
 
-				<Text style={styles.settlementFootnote}>
-					Net surplus units carry forward across billing cycles and are settled annually by Electricity Department Goa under JERC net metering regulations.
-				</Text>
-			</Card>
+					<Text style={styles.quickCardLabel}>Solar care</Text>
+					<Text style={styles.quickCardTask} numberOfLines={1}>
+						{careNextTask.title}
+					</Text>
+
+					<View style={styles.quickCardFooter}>
+						<Text style={styles.quickCardDue} numberOfLines={1}>
+							{careNextTask.dueText}
+						</Text>
+					</View>
+				</TouchableOpacity>
+			</View>
 		</ScrollView>
 	);
 };
 
-const EmptyState: React.FC<{
-	onAddBill: () => void;
-}> = ({ onAddBill }) => (
+// ── Clean Empty State when No Bills are Present ───────────────
+const EmptyState: React.FC<{ onAddBill: () => void }> = ({ onAddBill }) => (
 	<View style={styles.emptyContainer}>
 		<View style={styles.emptyIconWrap}>
 			<Ionicons name="sunny-outline" size={44} color={COLORS.gold} />
 		</View>
 		<Text style={styles.emptyTitle}>Welcome to Goa SolarTrack</Text>
 		<Text style={styles.emptySub}>
-			Add your first monthly electricity bill to begin tracking rooftop solar production, savings, and energy credits in Goa.
+			Add your first monthly electricity bill to begin tracking rooftop solar production, home savings, and energy credits in Goa.
 		</Text>
-		<TouchableOpacity id="btn-add-bill-empty" style={styles.emptyAddBtn} onPress={onAddBill}>
+		<TouchableOpacity
+			id="btn-add-bill-empty"
+			style={styles.emptyAddBtn}
+			onPress={onAddBill}
+			activeOpacity={0.8}
+		>
 			<Ionicons name="add-circle" size={18} color={COLORS.textInverse} />
 			<Text style={styles.emptyAddBtnText}>Add Monthly Bill</Text>
 		</TouchableOpacity>
 	</View>
 );
 
-// ── Styles ────────────────────────────────────────────────────
+// ── Styles (Clean, Premium, Consistent with Design System) ────
 const styles = StyleSheet.create({
 	scroll: {
 		flex: 1,
-		backgroundColor: COLORS.background,
+		backgroundColor: "#F8FAFC",
 	},
 	content: {
-		padding: SPACING.md,
-		paddingBottom: SPACING.xxl + 24,
-	},
-	cardSpacing: {
-		marginBottom: SPACING.lg,
+		padding: 16,
+		paddingBottom: 36,
+		gap: 14,
 	},
 
-	// Scope toggle
+	// ── 1. Main Hero Card ──
+	heroCard: {
+		backgroundColor: "#F0F9FF",
+		borderRadius: 24,
+		padding: 18,
+		borderWidth: 1,
+		borderColor: "#E0F2FE",
+		...SHADOW.card,
+	},
+	heroTopRow: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "center",
+		marginBottom: 16,
+	},
+	heroTextCol: {
+		flex: 1,
+		paddingRight: 10,
+	},
+	heroPeriodLabel: {
+		fontSize: 13,
+		fontWeight: FONT.semi,
+		color: "#0284C7",
+		marginBottom: 4,
+		letterSpacing: 0.1,
+	},
+	heroHeadline: {
+		fontSize: 23,
+		fontWeight: FONT.heavy,
+		color: "#0F172A",
+		lineHeight: 28,
+		letterSpacing: -0.4,
+		marginBottom: 4,
+	},
+	heroSubtext: {
+		fontSize: 12.5,
+		color: "#64748B",
+		lineHeight: 16,
+	},
+	mascotWrap: {
+		width: 108,
+		height: 92,
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	mascotImage: {
+		width: "100%",
+		height: "100%",
+	},
+
+	// Two Child Metric Cards inside Hero
+	heroMetricsRow: {
+		flexDirection: "row",
+		gap: 10,
+	},
+	heroMetricCardOrange: {
+		flex: 1,
+		backgroundColor: "#FFFBEB",
+		borderRadius: 16,
+		padding: 13,
+		borderWidth: 1,
+		borderColor: "#FEF3C7",
+	},
+	heroMetricCardGreen: {
+		flex: 1,
+		backgroundColor: "#F0FDF4",
+		borderRadius: 16,
+		padding: 13,
+		borderWidth: 1,
+		borderColor: "#DCFCE7",
+	},
+	heroMetricHeader: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 6,
+		marginBottom: 6,
+	},
+	heroMetricIconWrapOrange: {
+		width: 26,
+		height: 26,
+		borderRadius: 13,
+		backgroundColor: "#FEF3C7",
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	heroMetricIconWrapGreen: {
+		width: 26,
+		height: 26,
+		borderRadius: 13,
+		backgroundColor: "#DCFCE7",
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	heroMetricLabel: {
+		fontSize: 12,
+		fontWeight: FONT.semi,
+		color: "#475569",
+		flex: 1,
+	},
+	heroMetricValueRow: {
+		flexDirection: "row",
+		alignItems: "baseline",
+		gap: 3,
+		marginBottom: 2,
+	},
+	heroMetricValueOrange: {
+		fontSize: 27,
+		fontWeight: FONT.heavy,
+		color: "#EA580C",
+		letterSpacing: -0.5,
+	},
+	heroMetricValueGreen: {
+		fontSize: 27,
+		fontWeight: FONT.heavy,
+		color: "#059669",
+		letterSpacing: -0.5,
+	},
+	heroMetricUnit: {
+		fontSize: 13,
+		fontWeight: FONT.bold,
+		color: "#64748B",
+	},
+	heroMetricSubOrange: {
+		fontSize: 11.5,
+		color: "#94A3B8",
+		fontWeight: FONT.medium,
+	},
+	heroMetricSubGreen: {
+		fontSize: 11.5,
+		color: "#059669",
+		fontWeight: FONT.semi,
+	},
+
+	// ── Reusable Card Container ──
+	card: {
+		backgroundColor: "#FFFFFF",
+		borderRadius: 20,
+		padding: 16,
+		borderWidth: 1,
+		borderColor: "#E2E8F0",
+		...SHADOW.card,
+	},
+	cardTitle: {
+		fontSize: 16.5,
+		fontWeight: FONT.bold,
+		color: "#0F172A",
+		letterSpacing: -0.2,
+	},
+	cardSubtitle: {
+		fontSize: 12,
+		color: "#64748B",
+		marginTop: 2,
+	},
+
+	// ── 2. Energy Distribution ──
+	distHeaderRow: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "center",
+		marginBottom: 14,
+	},
 	scopeToggle: {
 		flexDirection: "row",
 		backgroundColor: "#F1F5F9",
-		borderRadius: RADIUS.full,
-		padding: 2,
+		borderRadius: 20,
+		padding: 3,
 		borderWidth: 1,
 		borderColor: "#E2E8F0",
 	},
 	scopeBtn: {
 		paddingHorizontal: 10,
-		paddingVertical: 3,
-		borderRadius: RADIUS.full,
+		paddingVertical: 4,
+		borderRadius: 16,
 	},
 	scopeBtnActive: {
-		backgroundColor: COLORS.card,
+		backgroundColor: "#FFFFFF",
 		...SHADOW.card,
 	},
 	scopeBtnText: {
-		fontSize: 11,
+		fontSize: 11.5,
 		fontWeight: FONT.medium,
-		color: COLORS.textMuted,
+		color: "#64748B",
 	},
 	scopeBtnTextActive: {
-		color: COLORS.text,
-		fontWeight: FONT.bold,
-	},
-
-	// ── Energy Overview (Refactored Clean Hierarchy) ──────────
-	eoContainer: {
-		gap: SPACING.md - 2,
-	},
-	// 2 Spacious Metric Tiles with Icons
-	eoRow: {
-		flexDirection: "row",
-		gap: SPACING.sm + 2,
-	},
-	eoTile: {
-		flex: 1,
-		backgroundColor: "#F8FAFC",
-		borderRadius: RADIUS.md,
-		borderWidth: 1,
-		borderColor: "#EEF2F6",
-		paddingVertical: 12,
-		paddingHorizontal: 14,
-	},
-	eoTileHeader: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 7,
-		marginBottom: 6,
-	},
-	eoIconBadge: {
-		width: 28,
-		height: 28,
-		borderRadius: 14,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	eoTileLabel: {
-		fontSize: 12,
-		fontWeight: FONT.medium,
-		color: COLORS.textSub,
-		flex: 1,
-	},
-	eoTileValueRow: {
-		flexDirection: "row",
-		alignItems: "baseline",
-		gap: 4,
-	},
-	eoTileValue: {
-		fontSize: 23,
-		fontWeight: FONT.heavy,
-		letterSpacing: -0.5,
-		lineHeight: 28,
-	},
-	eoTileUnit: {
-		fontSize: 12,
-		fontWeight: FONT.semi,
-		color: COLORS.textMuted,
-	},
-	eoTileNote: {
-		fontSize: 11,
-		color: COLORS.textMuted,
-		marginTop: 3,
-	},
-
-
-	// Interactive Flow Section
-	eoFlowCard: {
-		backgroundColor: "#F8FAFC",
-		borderRadius: RADIUS.md,
-		borderWidth: 1,
-		borderColor: "#EEF2F6",
-		paddingVertical: 12,
-		paddingHorizontal: 12,
-	},
-	eoFlowHeader: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		marginBottom: 8,
-	},
-	eoFlowTitle: {
-		fontSize: 13,
-		fontWeight: FONT.bold,
-		color: COLORS.text,
-	},
-	eoFlowSubtitle: {
-		fontSize: 11,
-		color: COLORS.textMuted,
-		marginTop: 1,
-	},
-	eoFlowBadge: {
-		backgroundColor: "#ECFDF5",
-		paddingHorizontal: 8,
-		paddingVertical: 3,
-		borderRadius: RADIUS.full,
-		borderWidth: 1,
-		borderColor: "#A7F3D0",
-	},
-	eoFlowBadgeText: {
-		fontSize: 11,
-		fontWeight: FONT.bold,
-		color: "#059669",
-	},
-	eoFlowTrack: {
-		flexDirection: "row",
-		height: 10,
-		gap: 3,
-		width: "100%",
-		borderRadius: 5,
-		overflow: "hidden",
-		marginBottom: 10,
-	},
-	eoFlowSegmentHome: {
-		backgroundColor: "#059669",
-		borderRadius: 4,
-		height: "100%",
-	},
-	eoFlowSegmentExport: {
-		backgroundColor: "#0284C7",
-		borderRadius: 4,
-		height: "100%",
-	},
-	eoFlowTabsRow: {
-		flexDirection: "row",
-		gap: 8,
-		marginBottom: 8,
-	},
-	eoFlowTab: {
-		flex: 1,
-		backgroundColor: COLORS.surface,
-		borderRadius: RADIUS.sm,
-		borderWidth: 1,
-		borderColor: COLORS.border,
-		paddingVertical: 7,
-		paddingHorizontal: 9,
-	},
-	eoFlowTabActiveHome: {
-		backgroundColor: "#F0FDF4",
-		borderColor: "#86EFAC",
-	},
-	eoFlowTabActiveExport: {
-		backgroundColor: "#F0F9FF",
-		borderColor: "#BAE6FD",
-	},
-	eoFlowTabHeader: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 5,
-		marginBottom: 2,
-	},
-	eoFlowTabDot: {
-		width: 7,
-		height: 7,
-		borderRadius: 3.5,
-	},
-	eoFlowTabLabel: {
-		fontSize: 11,
-		fontWeight: FONT.medium,
-		color: COLORS.textMuted,
-		flex: 1,
-	},
-	eoFlowTabValRow: {
-		flexDirection: "row",
-		alignItems: "baseline",
-		gap: 3,
-	},
-	eoFlowTabVal: {
-		fontSize: 15,
-		fontWeight: FONT.heavy,
-		color: COLORS.text,
-	},
-	eoFlowTabUnit: {
-		fontSize: 10,
-		color: COLORS.textMuted,
-		fontWeight: FONT.medium,
-	},
-	eoFlowTabShare: {
-		fontSize: 11,
-		fontWeight: FONT.semi,
-		color: COLORS.textSub,
-		marginLeft: "auto",
-	},
-	eoFlowCallout: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 6,
-		paddingVertical: 6,
-		paddingHorizontal: 8,
-		borderRadius: RADIUS.sm - 2,
-	},
-	eoFlowCalloutHome: {
-		backgroundColor: "#F0FDF4",
-	},
-	eoFlowCalloutExport: {
-		backgroundColor: "#F0F9FF",
-	},
-	eoFlowCalloutText: {
-		fontSize: 11,
-		color: COLORS.textSub,
-		flex: 1,
-		lineHeight: 14,
-	},
-
-	// Expandable Ledger Drawer
-	ledgerSection: {
-		marginTop: 2,
-	},
-	expandLedgerBtn: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		paddingVertical: 8,
-		paddingHorizontal: 6,
-	},
-	expandLedgerLeft: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 6,
-	},
-	expandLedgerText: {
-		fontSize: 12,
-		fontWeight: FONT.semi,
-		color: COLORS.textSub,
-	},
-	expandLedgerRight: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 4,
-	},
-	expandLedgerHint: {
-		fontSize: 11,
-		color: COLORS.textMuted,
-	},
-	ledgerDrawer: {
-		backgroundColor: "#F8FAFC",
-		borderRadius: RADIUS.md,
-		paddingVertical: 8,
-		paddingHorizontal: 12,
-		borderWidth: 1,
-		borderColor: "#EEF2F6",
-		marginTop: 4,
-	},
-
-	// ── Generation Graph Card ───────────────────────────────────
-	chartContainer: {
-		height: 175,
-		marginTop: SPACING.xs,
-		marginBottom: 2,
-		position: "relative",
-		justifyContent: "flex-end",
-	},
-	chartAvgLine: {
-		position: "absolute",
-		left: 0,
-		right: 0,
-		flexDirection: "row",
-		alignItems: "center",
-		zIndex: 2,
-	},
-	chartAvgDashes: {
-		flex: 1,
-		height: 1,
-		borderStyle: "dashed",
-		borderWidth: 1,
-		borderColor: "#F59E0B88",
-	},
-	chartAvgText: {
-		fontSize: 10,
-		fontWeight: FONT.semi,
-		color: "#D97706",
-		backgroundColor: "#FFFBEB",
-		paddingHorizontal: 6,
-		paddingVertical: 1,
-		borderRadius: RADIUS.full,
-		borderWidth: 1,
-		borderColor: "#FDE68A",
-		marginLeft: 4,
-	},
-	chartBarsRow: {
-		flexDirection: "row",
-		alignItems: "flex-end",
-		justifyContent: "space-around",
-		height: 140,
-		paddingTop: 20,
-		borderBottomWidth: 1,
-		borderBottomColor: "#E2E8F0",
-	},
-	chartBarCol: {
-		flex: 1,
-		alignItems: "center",
-		height: "100%",
-		justifyContent: "flex-end",
-		paddingHorizontal: 2,
-	},
-	chartBarValText: {
-		fontSize: 11,
-		fontWeight: FONT.semi,
-		color: COLORS.textMuted,
-		marginBottom: 4,
-	},
-	chartBarValTextActive: {
-		color: "#D97706",
-		fontWeight: FONT.bold,
-		fontSize: 12,
-	},
-	chartBarTrack: {
-		width: 32,
-		height: 92,
-		backgroundColor: "#F1F5F9",
-		borderRadius: 8,
-		justifyContent: "flex-end",
-		overflow: "hidden",
-	},
-	chartBarTrackActive: {
-		borderWidth: 1.5,
-		borderColor: "#F59E0B",
-	},
-	chartBarFill: {
-		width: "100%",
-		borderRadius: 6,
-	},
-	chartBarFillActive: {
-		backgroundColor: "#F59E0B",
-		borderTopLeftRadius: 6,
-		borderTopRightRadius: 6,
-	},
-	chartBarFillInactive: {
-		backgroundColor: "#FCD34D",
-		borderTopLeftRadius: 6,
-		borderTopRightRadius: 6,
-	},
-	chartBarMonthText: {
-		fontSize: 11,
-		color: COLORS.textMuted,
-		marginTop: 6,
-		fontWeight: FONT.medium,
-	},
-	chartBarMonthTextActive: {
 		color: "#0F172A",
 		fontWeight: FONT.bold,
 	},
-	chartBarDayRateText: {
-		fontSize: 9,
-		color: COLORS.textMuted,
-		marginTop: 1,
-	},
-	chartDetailPill: {
+	distTrack: {
+		height: 24,
+		borderRadius: 12,
+		overflow: "hidden",
 		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		backgroundColor: "#FFFBEB",
-		borderRadius: RADIUS.md,
-		borderWidth: 1,
-		borderColor: "#FDE68A",
-		paddingVertical: 9,
-		paddingHorizontal: 12,
-		marginTop: 12,
+		marginBottom: 12,
+		backgroundColor: "#F1F5F9",
 	},
-	chartDetailPillLeft: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 8,
-	},
-	chartDetailIconWrap: {
-		width: 26,
-		height: 26,
-		borderRadius: 13,
-		backgroundColor: "#FEF3C7",
-		alignItems: "center",
+	distSegmentHome: {
+		backgroundColor: "#10B981",
 		justifyContent: "center",
-	},
-	chartDetailPillTitle: {
-		fontSize: 13,
-		fontWeight: FONT.bold,
-		color: "#92400E",
-	},
-	chartDetailPillHighlight: {
-		fontSize: 13,
-		fontWeight: FONT.heavy,
-		color: "#B45309",
-	},
-	chartDetailPillSub: {
-		fontSize: 11,
-		color: "#B45309",
-		marginTop: 1,
-	},
-	chartDetailPillRight: {
-		alignItems: "flex-end",
-	},
-	chartDetailExportLabel: {
-		fontSize: 10,
-		color: "#92400E",
-		fontWeight: FONT.medium,
-	},
-	chartDetailExportVal: {
-		fontSize: 13,
-		fontWeight: FONT.bold,
-		color: "#059669",
-	},
-
-	// ── Solar Care (Aligned with CareScreen) ────────────────────
-	careHeroCard: {
-		backgroundColor: "#FFFFFF",
-		borderRadius: 16,
-		borderWidth: 1,
-		borderColor: "#E2E8F0",
-		padding: 16,
-		marginBottom: 16,
-		...SHADOW.card,
-	},
-	careHeaderRow: {
-		flexDirection: "row",
 		alignItems: "center",
-		justifyContent: "space-between",
+	},
+	distSegmentExport: {
+		backgroundColor: "#3B82F6",
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	distBarPctText: {
+		fontSize: 11,
+		fontWeight: FONT.bold,
+		color: "#FFFFFF",
+	},
+	distBoxesRow: {
+		flexDirection: "row",
+		gap: 10,
 		marginBottom: 12,
 	},
-	careCardTitle: {
-		fontSize: 16,
-		fontWeight: "700",
-		color: "#0F172A",
-		letterSpacing: -0.2,
-	},
-	careCardSubtitle: {
-		fontSize: 12,
-		color: "#64748B",
-		marginTop: 2,
-	},
-	careReportPillBtn: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 4,
-		backgroundColor: "#FFF7ED",
-		borderWidth: 1,
-		borderColor: "#FED7AA",
-		borderRadius: 20,
-		paddingHorizontal: 10,
-		paddingVertical: 5,
-	},
-	careReportPillText: {
-		fontSize: 12,
-		fontWeight: "600",
-		color: "#EA580C",
-	},
-	careSplitBox: {
-		flexDirection: "row",
-		alignItems: "center",
-		backgroundColor: "#E8FDF0",
+	distBoxHome: {
+		flex: 1,
+		backgroundColor: "#F0FDF4",
 		borderRadius: 14,
-		paddingHorizontal: 12,
-		paddingVertical: 12,
+		padding: 11,
 		borderWidth: 1,
 		borderColor: "#DCFCE7",
 	},
-	careSplitBoxWarning: {
-		backgroundColor: "#FEF2F2",
-		borderColor: "#FECACA",
-	},
-	careStatusLeft: {
-		flex: 0.6,
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 10,
-	},
-	careStatusTextCol: {
+	distBoxExport: {
 		flex: 1,
-	},
-	careStatusTitle: {
-		fontSize: 14,
-		fontWeight: "700",
-		letterSpacing: -0.2,
-	},
-	careTitleSuccess: {
-		color: "#0E9E4E",
-	},
-	careTitleDanger: {
-		color: "#DC2626",
-	},
-	careStatusSub: {
-		fontSize: 11.5,
-		color: "#64748B",
-		marginTop: 2,
-	},
-	careStatusRight: {
-		flex: 0.4,
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "flex-end",
-	},
-	careNextTaskCol: {
-		alignItems: "flex-end",
-	},
-	careNextTaskLabel: {
-		fontSize: 11,
-		color: "#94A3B8",
-		fontWeight: "500",
-		textAlign: "right",
-	},
-	careNextTaskTitle: {
-		fontSize: 13.5,
-		fontWeight: "700",
-		color: "#0F172A",
-		marginTop: 1,
-		textAlign: "right",
-	},
-	careNextTaskDue: {
-		fontSize: 11.5,
-		color: "#64748B",
-		marginTop: 1,
-		textAlign: "right",
-	},
-	careActionRow: {
-		flexDirection: "row",
-		gap: 10,
-		marginTop: 12,
-	},
-	carePrimaryActionBtn: {
-		flex: 1,
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: 6,
-		backgroundColor: "#0cbaeaff",
-		borderRadius: 12,
-		paddingVertical: 11,
-	},
-	carePrimaryActionText: {
-		fontSize: 13,
-		fontWeight: "700",
-		color: "#FFFFFF",
-	},
-	careSecondaryActionBtn: {
-		flex: 1,
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: 6,
-		backgroundColor: "#FFFFFF",
+		backgroundColor: "#EFF6FF",
+		borderRadius: 14,
+		padding: 11,
 		borderWidth: 1,
-		borderColor: "#CBD5E1",
-		borderRadius: 12,
-		paddingVertical: 11,
+		borderColor: "#DBEAFE",
 	},
-	careSecondaryActionText: {
-		fontSize: 13,
-		fontWeight: "600",
-		color: "#0F172A",
-	},
-
-	// ── Banked Credit & Annual Settlement ───────────────────────
-	settlementCard: {
-		backgroundColor: "#F8FAFC",
-		borderRadius: RADIUS.md,
-		borderWidth: 1,
-		borderColor: "#E2E8F0",
-		padding: SPACING.md,
-	},
-	settlementBankedRow: {
+	distBoxHeader: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: SPACING.sm + 2,
+		gap: 6,
+		marginBottom: 4,
 	},
-	settlementIconWrap: {
-		width: 36,
-		height: 36,
-		borderRadius: 18,
-		backgroundColor: "#DCFCE7",
-		alignItems: "center",
-		justifyContent: "center",
+	distDotHome: {
+		width: 7,
+		height: 7,
+		borderRadius: 4,
+		backgroundColor: "#10B981",
 	},
-	settlementBankedCol: {
-		flex: 1,
+	distDotExport: {
+		width: 7,
+		height: 7,
+		borderRadius: 4,
+		backgroundColor: "#3B82F6",
 	},
-	settlementBankedLabel: {
-		fontSize: 13,
-		fontWeight: FONT.semi,
-		color: COLORS.text,
-	},
-	settlementBankedSub: {
-		fontSize: 11,
-		color: COLORS.textMuted,
-		marginTop: 2,
-	},
-	settlementBankedValWrap: {
-		alignItems: "flex-end",
-	},
-	settlementBankedVal: {
-		fontSize: 21,
-		fontWeight: FONT.heavy,
-		color: "#059669",
-		letterSpacing: -0.5,
-	},
-	settlementBankedUnit: {
+	distBoxLabel: {
 		fontSize: 12,
-		fontWeight: FONT.semi,
-		color: COLORS.textMuted,
-	},
-	settlementDivider: {
-		height: 1,
-		backgroundColor: "#EEF2F6",
-		marginVertical: SPACING.sm + 4,
-	},
-	settlementPayoutBlock: {
-		marginTop: 0,
-	},
-	settlementMetricsRow: {
-		flexDirection: "row",
-		justifyContent: "space-between",
-		alignItems: "flex-start",
-	},
-	settlementMetricCol: {
-		flex: 1,
-	},
-	settlementDetailLabel: {
-		fontSize: 11,
-		color: COLORS.textMuted,
+		color: "#475569",
 		fontWeight: FONT.medium,
 	},
-	settlementPayoutVal: {
-		fontSize: 19,
-		fontWeight: FONT.heavy,
-		color: COLORS.success,
-		letterSpacing: -0.5,
-		marginTop: 2,
+	distBoxValRow: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "baseline",
 	},
-	settlementDetailVal: {
-		fontSize: 13,
+	distBoxVal: {
+		fontSize: 18,
 		fontWeight: FONT.bold,
-		color: COLORS.text,
-		marginTop: 2,
+		color: "#0F172A",
 	},
-	settlementPromptBlock: {
-		marginTop: 0,
+	distBoxUnit: {
+		fontSize: 11.5,
+		fontWeight: FONT.medium,
+		color: "#64748B",
 	},
-	settlementPromptRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 8,
-		backgroundColor: "#F1F5F9",
-		paddingVertical: 8,
-		paddingHorizontal: 10,
-		borderRadius: RADIUS.sm,
-	},
-	settlementPromptText: {
-		fontSize: 11,
-		color: COLORS.textSub,
-		flex: 1,
-		lineHeight: 16,
-	},
-	settlementFootnote: {
-		fontSize: 11,
-		color: COLORS.textMuted,
-		marginTop: SPACING.sm,
-		lineHeight: 16,
-	},
-
-	// ── Empty state ─────────────────────────────────────────────
-	emptyContainer: {
-		flex: 1,
-		alignItems: "center",
-		justifyContent: "center",
-		padding: SPACING.xl,
-		gap: SPACING.md,
-	},
-	emptyIconWrap: {
-		width: 80,
-		height: 80,
-		borderRadius: 40,
-		backgroundColor: COLORS.glowGold,
-		borderWidth: 1,
-		borderColor: `${COLORS.gold}33`,
-		justifyContent: "center",
-		alignItems: "center",
-	},
-	emptyTitle: {
-		fontSize: 22,
-		fontWeight: FONT.heavy,
-		color: COLORS.text,
-		textAlign: "center",
-	},
-	emptySub: {
-		fontSize: 14,
-		color: COLORS.textMuted,
-		textAlign: "center",
-		lineHeight: 21,
-	},
-	emptyAddBtn: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 8,
-		backgroundColor: COLORS.gold,
-		paddingHorizontal: SPACING.xl,
-		paddingVertical: 14,
-		borderRadius: RADIUS.full,
-		...SHADOW.glow,
-	},
-	emptyAddBtnText: {
+	distBoxShareHome: {
 		fontSize: 15,
 		fontWeight: FONT.bold,
-		color: COLORS.textInverse,
+		color: "#059669",
 	},
-
-	// ── Smart Performance Insights (Simple for Everyday Users) ──
-	smartHeroCard: {
-		backgroundColor: "#FFFFFF",
-		borderRadius: 16,
-		borderWidth: 1,
-		borderColor: "#E2E8F0",
-		padding: 16,
-		marginBottom: 16,
-		...SHADOW.card,
+	distBoxShareExport: {
+		fontSize: 15,
+		fontWeight: FONT.bold,
+		color: "#2563EB",
 	},
-	smartHeroHeader: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		marginBottom: 14,
-	},
-	smartHeroTitle: {
-		fontSize: 16,
-		fontWeight: "700",
-		color: "#0F172A",
-		letterSpacing: -0.2,
-	},
-	smartHeroSubtitle: {
-		fontSize: 12,
-		color: "#64748B",
-		marginTop: 2,
-	},
-	smartHeroHealthBadge: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 4,
-		paddingHorizontal: 8,
-		paddingVertical: 4,
-		borderRadius: 20,
-		borderWidth: 1,
-	},
-	healthBadgeSuccess: {
-		backgroundColor: "#ECFDF5",
-		borderColor: "#A7F3D0",
-	},
-	healthBadgeWarning: {
-		backgroundColor: "#FEF2F2",
-		borderColor: "#FECACA",
-	},
-	smartHeroHealthText: {
-		fontSize: 11.5,
-		fontWeight: "700",
-	},
-	smartMetricsRow: {
-		flexDirection: "row",
-		gap: 10,
-		marginBottom: 12,
-	},
-	smartMetricBox: {
-		flex: 1,
-		backgroundColor: "#F8FAFC",
-		borderRadius: 14,
-		borderWidth: 1,
-		borderColor: "#E2E8F0",
-		padding: 12,
-	},
-	smartMetricTop: {
+	distCalloutBanner: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: 8,
+		backgroundColor: "#F0FDF4",
+		borderRadius: 12,
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		borderWidth: 1,
+		borderColor: "#DCFCE7",
+	},
+	distCalloutText: {
+		flex: 1,
+		fontSize: 12,
+		color: "#166534",
+		lineHeight: 16,
+	},
+	distCalloutBold: {
+		fontWeight: FONT.bold,
+		color: "#15803D",
+	},
+
+	// ── 3. Monthly Solar Generation ──
+	chartHeaderRow: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "center",
+		marginBottom: 16,
+	},
+	viewAllBtn: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 3,
+		paddingVertical: 4,
+		paddingHorizontal: 6,
+	},
+	viewAllBtnText: {
+		fontSize: 12.5,
+		fontWeight: FONT.bold,
+		color: "#EA580C",
+	},
+	chartContainer: {
+		paddingTop: 4,
+	},
+	chartBarsRow: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "flex-end",
+		height: 150,
+		paddingHorizontal: 4,
+	},
+	chartCol: {
+		flex: 1,
+		alignItems: "center",
+		height: "100%",
+		justifyContent: "flex-end",
+	},
+	chartValText: {
+		fontSize: 10.5,
+		fontWeight: FONT.semi,
+		color: "#64748B",
 		marginBottom: 6,
 	},
-	smartBillIcon: {
+	chartValTextLatest: {
+		color: "#EA580C",
+		fontWeight: FONT.bold,
+	},
+	chartValTextSelected: {
+		color: "#0F172A",
+		fontWeight: FONT.bold,
+	},
+	chartTrack: {
+		width: 22,
+		height: 90,
+		justifyContent: "flex-end",
+		backgroundColor: "#F1F5F9",
+		borderRadius: 8,
+		overflow: "hidden",
+		marginBottom: 6,
+	},
+	chartFill: {
+		width: "100%",
+		borderRadius: 8,
+	},
+	chartFillPrevious: {
+		backgroundColor: "#FBBF24",
+	},
+	chartFillLatest: {
+		backgroundColor: "#EA580C",
+	},
+	chartFillSelected: {
+		backgroundColor: "#C2410C",
+	},
+	chartMonthText: {
+		fontSize: 11,
+		fontWeight: FONT.semi,
+		color: "#64748B",
+	},
+	chartMonthTextLatest: {
+		color: "#0F172A",
+		fontWeight: FONT.bold,
+	},
+	chartYearText: {
+		fontSize: 9.5,
+		color: "#94A3B8",
+		marginTop: 1,
+	},
+	chartYearTextLatest: {
+		color: "#64748B",
+		fontWeight: FONT.semi,
+	},
+	chartSelectedPill: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 8,
+		backgroundColor: "#FFFBEB",
+		borderRadius: 12,
+		padding: 10,
+		marginTop: 14,
+		borderWidth: 1,
+		borderColor: "#FEF3C7",
+	},
+	chartSelectedIcon: {
 		width: 28,
 		height: 28,
-		borderRadius: 8,
+		borderRadius: 14,
+		backgroundColor: "#FEF3C7",
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	chartSelectedTitle: {
+		fontSize: 12.5,
+		fontWeight: FONT.semi,
+		color: "#0F172A",
+	},
+	chartSelectedSub: {
+		fontSize: 11,
+		color: "#64748B",
+		marginTop: 1,
+	},
+	chartEmpty: {
+		paddingVertical: 24,
+		alignItems: "center",
+	},
+	chartEmptyText: {
+		fontSize: 12.5,
+		color: "#94A3B8",
+	},
+
+	// ── 4 & 5. Quick Information Cards ──
+	quickCardsRow: {
+		flexDirection: "row",
+		gap: 12,
+	},
+	quickCard: {
+		flex: 1,
+		backgroundColor: "#FFFFFF",
+		borderRadius: 18,
+		padding: 14,
+		borderWidth: 1,
+		borderColor: "#E2E8F0",
+		...SHADOW.card,
+		justifyContent: "space-between",
+		minHeight: 125,
+	},
+	quickCardTop: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "center",
+		marginBottom: 8,
+	},
+	quickIconWrapBlue: {
+		width: 32,
+		height: 32,
+		borderRadius: 16,
 		backgroundColor: "#EFF6FF",
 		justifyContent: "center",
 		alignItems: "center",
 	},
-	smartSolarIcon: {
-		width: 28,
-		height: 28,
-		borderRadius: 8,
-		backgroundColor: "#FFF7ED",
+	quickIconWrapAmber: {
+		width: 32,
+		height: 32,
+		borderRadius: 16,
+		backgroundColor: "#FEF3C7",
 		justifyContent: "center",
 		alignItems: "center",
 	},
-	smartMetricLabel: {
-		fontSize: 12,
+	quickCardLabel: {
+		fontSize: 11.5,
 		color: "#64748B",
-		fontWeight: "600",
+		fontWeight: FONT.medium,
+		marginBottom: 2,
 	},
-	smartMetricValue: {
-		fontSize: 20,
-		fontWeight: "800",
+	quickCardAmount: {
+		fontSize: 22,
+		fontWeight: FONT.heavy,
 		color: "#0F172A",
-		letterSpacing: -0.3,
-		marginBottom: 6,
+		letterSpacing: -0.4,
+		marginBottom: 8,
 	},
-	smartMetricUnit: {
-		fontSize: 13,
-		fontWeight: "600",
-		color: "#64748B",
+	quickCardTask: {
+		fontSize: 14.5,
+		fontWeight: FONT.bold,
+		color: "#0F172A",
+		letterSpacing: -0.2,
+		marginBottom: 8,
 	},
-	smartStatusChip: {
+	quickCardFooter: {
 		flexDirection: "row",
 		alignItems: "center",
+		justifyContent: "space-between",
 		gap: 4,
-		backgroundColor: "#FFFFFF",
-		borderWidth: 1,
-		borderColor: "#E2E8F0",
-		borderRadius: 12,
-		paddingHorizontal: 7,
-		paddingVertical: 3,
-		alignSelf: "flex-start",
 	},
-	smartStatusChipText: {
+	quickCardPeriod: {
 		fontSize: 11,
-		fontWeight: "600",
-		color: "#0F172A",
+		color: "#64748B",
+		flex: 1,
 	},
-	smartFriendlyBanner: {
+	quickCardDue: {
+		fontSize: 11,
+		color: "#64748B",
+		fontWeight: FONT.medium,
+	},
+	statusBadge: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: 8,
-		paddingHorizontal: 12,
-		paddingVertical: 10,
-		borderRadius: 12,
-		borderWidth: 1,
+		gap: 3,
+		paddingHorizontal: 6,
+		paddingVertical: 2,
+		borderRadius: 10,
 	},
-	friendlyBannerSuccess: {
-		backgroundColor: "#F0FDF4",
-		borderColor: "#DCFCE7",
+	statusBadgeText: {
+		fontSize: 10.5,
+		fontWeight: FONT.bold,
 	},
-	friendlyBannerWarning: {
-		backgroundColor: "#FEF2F2",
-		borderColor: "#FECACA",
-	},
-	smartFriendlyText: {
+
+	// ── Empty State ──
+	emptyContainer: {
 		flex: 1,
-		fontSize: 12,
-		fontWeight: "500",
-		lineHeight: 16,
+		justifyContent: "center",
+		alignItems: "center",
+		padding: SPACING.xl,
+		backgroundColor: "#F8FAFC",
+	},
+	emptyIconWrap: {
+		width: 76,
+		height: 76,
+		borderRadius: 38,
+		backgroundColor: COLORS.glowGold,
+		justifyContent: "center",
+		alignItems: "center",
+		marginBottom: SPACING.lg,
+	},
+	emptyTitle: {
+		fontSize: 20,
+		fontWeight: FONT.bold,
+		color: COLORS.text,
+		marginBottom: SPACING.sm,
+		textAlign: "center",
+	},
+	emptySub: {
+		fontSize: 13.5,
+		color: COLORS.textSub,
+		textAlign: "center",
+		lineHeight: 20,
+		marginBottom: SPACING.xl,
+		maxWidth: 320,
+	},
+	emptyAddBtn: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: SPACING.sm,
+		backgroundColor: COLORS.gold,
+		paddingHorizontal: SPACING.xl,
+		paddingVertical: 14,
+		borderRadius: RADIUS.full,
+		...SHADOW.card,
+	},
+	emptyAddBtnText: {
+		fontSize: 14,
+		fontWeight: FONT.bold,
+		color: COLORS.textInverse,
 	},
 });

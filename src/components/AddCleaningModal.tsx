@@ -54,7 +54,7 @@ export const AddCleaningModal: React.FC<AddCleaningModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay}>
+      <KeyboardAvoidingView behavior="height" style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}>
             <View>
@@ -66,7 +66,12 @@ export const AddCleaningModal: React.FC<AddCleaningModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.form}
+            contentContainerStyle={{ paddingBottom: 28 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Skip toggle */}
             <TouchableOpacity
               id="btn-skip-clean"
