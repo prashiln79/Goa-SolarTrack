@@ -17,6 +17,7 @@ import { SolarBill } from '../types/solar';
 import { Divider, LedgerRow, InfoNote } from '../components/ui/UIKit';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
 import { deduplicateBills } from '../services/solarStorage';
+import { formatToDDMMYYYY } from '../components/ui/DatePickerModal';
 
 interface BillsScreenProps {
   bills: SolarBill[];
@@ -197,13 +198,25 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
         const expanded = expandedId === bill.id;
         const readInterval =
           bill.periodStart && bill.periodEnd
-            ? `${bill.periodStart} – ${bill.periodEnd}`
+            ? `${formatToDDMMYYYY(bill.periodStart)} – ${formatToDDMMYYYY(bill.periodEnd)}`
             : null;
 
         const genFormatted =
           bill.generationKwh !== null && bill.generationKwh !== undefined
             ? `${bill.generationKwh}`
             : '—';
+
+        const totalHomeConsumption =
+          bill.estimatedTotalConsumptionKwh !== null &&
+          bill.estimatedTotalConsumptionKwh !== undefined &&
+          bill.estimatedTotalConsumptionKwh > 0
+            ? Math.round(bill.estimatedTotalConsumptionKwh)
+            : Math.round(
+                (bill.directSolarUseKwh ??
+                  (bill.generationKwh !== null && bill.generationKwh !== undefined
+                    ? Math.max(0, bill.generationKwh - (bill.exportKwh || 0))
+                    : 0)) + (bill.importKwh || 0)
+              );
 
         return (
           <TouchableOpacity
@@ -231,7 +244,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
                 <Text style={styles.billDatesSubtitle} numberOfLines={1}>
                   {readInterval
                     ? `${readInterval} (${bill.billingDays || 30}d)`
-                    : `Due: ${bill.dueDate || '—'}`}
+                    : `Due: ${bill.dueDate ? formatToDDMMYYYY(bill.dueDate) : '—'}`}
                 </Text>
               </View>
 
@@ -247,7 +260,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
               </View>
             </View>
 
-            {/* 3-Column Metrics Strip: Solar gen, Export, Banked */}
+            {/* 3-Column Metrics Strip: Solar gen, Home consumed, Banked */}
             <View style={styles.metricsStrip}>
               {/* Col 1: Solar Generated */}
               <View style={styles.metricCol}>
@@ -260,19 +273,15 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
                 <Text style={styles.metricLabel}>Solar generated</Text>
               </View>
 
-              {/* Arrow */}
-              <View style={styles.arrowCol}>
-                <Ionicons name="swap-horizontal" size={18} color="#94A3B8" />
-              </View>
-
-              {/* Col 2: Exported to Grid */}
+              {/* Col 2: Total Home Consumption */}
               <View style={styles.metricCol}>
                 <View style={styles.metricValRow}>
+                  <Ionicons name="home-outline" size={16} color="#059669" style={styles.iconMargin} />
                   <Text style={styles.metricValDark}>
-                    {bill.exportKwh} <Text style={styles.metricUnitMuted}>kWh</Text>
+                    {totalHomeConsumption} <Text style={styles.metricUnitMuted}>kWh</Text>
                   </Text>
                 </View>
-                <Text style={styles.metricLabel}>Exported to grid</Text>
+                <Text style={styles.metricLabel}>Home consumed</Text>
               </View>
 
               {/* Col 3: Banked Units */}
@@ -295,7 +304,7 @@ export const BillsScreen: React.FC<BillsScreenProps> = ({
                   <LedgerRow label="Meter Read Period" value={readInterval} />
                 ) : null}
                 <LedgerRow label="Billing Days" value={`${bill.billingDays || 30} days`} />
-                {bill.dueDate && <LedgerRow label="Payment Due Date" value={bill.dueDate} />}
+                {bill.dueDate && <LedgerRow label="Payment Due Date" value={formatToDDMMYYYY(bill.dueDate)} />}
 
                 <Divider style={{ marginVertical: SPACING.xs + 2 }} />
                 <Text style={styles.expandedSection}>ENERGY LEDGER (KWH)</Text>

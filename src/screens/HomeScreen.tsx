@@ -380,24 +380,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 						</Text>
 					</View>
 
-					{/* Metric 2: Home Consumed (Fresh Green) */}
+					{/* Metric 2: Total Banked Units (Fresh Green) */}
 					<View style={styles.heroMetricCardGreen}>
 						<View style={styles.heroMetricHeader}>
 							<View style={styles.heroMetricIconWrapGreen}>
-								<Ionicons name="home" size={16} color="#059669" />
+								<Ionicons name="wallet-outline" size={16} color="#059669" />
 							</View>
 							<Text style={styles.heroMetricLabel} numberOfLines={1}>
-								Home consumed
+								Total banked
 							</Text>
 						</View>
 						<View style={styles.heroMetricValueRow}>
 							<Text style={styles.heroMetricValueGreen}>
-								{Math.round(activeHomeConsumption)}
+								{latestBill.closingCreditKwh !== null && latestBill.closingCreditKwh !== undefined
+									? Math.round(latestBill.closingCreditKwh)
+									: 0}
 							</Text>
 							<Text style={styles.heroMetricUnit}>kWh</Text>
 						</View>
 						<Text style={styles.heroMetricSubGreen}>
-							{`${selfSufficiencyPct}% from solar`}
+							{latestBill.closingCreditKwh > 0
+								? "Carried forward credit"
+								: "No banked reserve"}
 						</Text>
 					</View>
 				</View>
@@ -488,7 +492,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 					<View style={styles.distBoxHome}>
 						<View style={styles.distBoxHeader}>
 							<View style={styles.distDotHome} />
-							<Text style={styles.distBoxLabel}>Household consumed</Text>
+							<Text style={styles.distBoxLabel}>Home consumed</Text>
 						</View>
 						<View style={styles.distBoxValRow}>
 							<Text style={styles.distBoxVal}>

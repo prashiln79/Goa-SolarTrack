@@ -26,7 +26,7 @@ import { SolarBill, SystemProfile } from '../types/solar';
 import { calculateEnergyAccounting } from '../domain/energyAccounting';
 import { parseBillPdf, extractTextFromPdfContent, parseGoaBillText } from '../services/billPdfParser';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
-import { DateField } from './ui/DatePickerModal';
+import { DateField, DatePickerModal, formatToDDMMYYYY, formatToYYYYMMDD } from './ui/DatePickerModal';
 
 interface AddBillModalProps {
   visible: boolean;
@@ -225,6 +225,9 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   const [rebate, setRebate]               = useState('');
   const [notes, setNotes]                 = useState('');
 
+  const [showBillDatePicker, setShowBillDatePicker] = useState(false);
+  const [showDueDatePicker, setShowDueDatePicker]   = useState(false);
+
   const [isSubmitting, setIsSubmitting]   = useState(false);
 
   // ── Auto-derive period dates ──
@@ -265,6 +268,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     setFppca('');
     setRebate('');
     setNotes('');
+    setShowBillDatePicker(false);
+    setShowDueDatePicker(false);
 
     // Pre-fill opening credit from latest bill
     if (latestBill) {
@@ -528,8 +533,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     const gen = parseNum(generationKwh);
     const opening = parseNum(openingCredit) ?? 0;
     const days = parseInt(customDays) || derivedDates.daysInMonth;
-    const start = customStart.trim() || derivedDates.start;
-    const end = customEnd.trim() || derivedDates.end;
+    const start = formatToYYYYMMDD(customStart.trim() || derivedDates.start);
+    const end = formatToYYYYMMDD(customEnd.trim() || derivedDates.end);
 
     const calc = calculateEnergyAccounting({
       generationKwh: gen,
@@ -560,7 +565,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       ...(billClosingCredit !== null && { closingCreditKwh: billClosingCredit }),
       billAmount: amount,
       billNumber: billNumber.trim() || undefined,
-      dueDate: dueDate.trim() || undefined,
+      dueDate: dueDate.trim() ? formatToYYYYMMDD(dueDate.trim()) : undefined,
       demandCharges: parseNum(demandCharges) ?? undefined,
       fppca: parseNum(fppca) ?? undefined,
       rebate: parseNum(rebate) ?? undefined,
@@ -656,7 +661,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.uploadTitle}>
-                    {isParsingPdf ? 'Analyzing PDF…' : 'Upload EDG Bill (PDF)'}
+                    {isParsingPdf ? 'Analyzing PDF…' : 'Upload Bill (PDF)'}
                   </Text>
                   <Text style={styles.uploadSub}>
                     {isParsingPdf
@@ -746,7 +751,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     />
                   </View>
                   <Text style={styles.monthDateSubtext}>
-                    {derivedDates.start} to {derivedDates.end} ({derivedDates.daysInMonth} days)
+                    {formatToDDMMYYYY(derivedDates.start)} to {formatToDDMMYYYY(derivedDates.end)} ({derivedDates.daysInMonth} days)
                   </Text>
                 </TouchableOpacity>
 
@@ -899,25 +904,67 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                   </View>
                   <View style={styles.edgMetaCol}>
                     <Text style={styles.edgMetaLabel}>Bill Date</Text>
-                    <TextInput
-                      id="input-edg-bill-date"
-                      style={styles.edgMetaInput}
-                      value={customEnd}
-                      onChangeText={setCustomEnd}
-                      placeholder={derivedDates.end}
-                      placeholderTextColor={COLORS.textMuted}
-                    />
+                    <View style={styles.edgMetaDateBtnWrapper}>
+                      <TouchableOpacity
+                        id="btn-edg-bill-date"
+                        style={styles.edgMetaDateBtn}
+                        onPress={() => setShowBillDatePicker(true)}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons name="calendar-outline" size={13} color={COLORS.gold} />
+                        <Text
+                          style={[
+                            styles.edgMetaDateText,
+                            !customEnd && styles.edgMetaDatePlaceholder,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {formatToDDMMYYYY(customEnd || derivedDates.end)}
+                        </Text>
+                      </TouchableOpacity>
+                      {!!customEnd && (
+                        <TouchableOpacity
+                          id="btn-clear-edg-bill-date"
+                          style={styles.edgDateClearBtn}
+                          onPress={() => setCustomEnd('')}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="close-circle" size={14} color={COLORS.textMuted} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                   <View style={styles.edgMetaCol}>
                     <Text style={styles.edgMetaLabel}>Due Date</Text>
-                    <TextInput
-                      id="input-edg-due-date"
-                      style={styles.edgMetaInput}
-                      value={dueDate}
-                      onChangeText={setDueDate}
-                      placeholder="e.g. 09/09/2026"
-                      placeholderTextColor={COLORS.textMuted}
-                    />
+                    <View style={styles.edgMetaDateBtnWrapper}>
+                      <TouchableOpacity
+                        id="btn-edg-due-date"
+                        style={styles.edgMetaDateBtn}
+                        onPress={() => setShowDueDatePicker(true)}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons name="calendar-outline" size={13} color={COLORS.gold} />
+                        <Text
+                          style={[
+                            styles.edgMetaDateText,
+                            !dueDate && styles.edgMetaDatePlaceholder,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {dueDate ? formatToDDMMYYYY(dueDate) : 'DD/MM/YYYY'}
+                        </Text>
+                      </TouchableOpacity>
+                      {!!dueDate && (
+                        <TouchableOpacity
+                          id="btn-clear-edg-due-date"
+                          style={styles.edgDateClearBtn}
+                          onPress={() => setDueDate('')}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="close-circle" size={14} color={COLORS.textMuted} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                   <View style={styles.edgMetaCol}>
                     <Text style={styles.edgMetaLabel}>Billing Days</Text>
@@ -1157,7 +1204,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       </View>
                       {dueDate ? (
                         <View style={styles.edgDueBadge}>
-                          <Text style={styles.edgDueBadgeText}>Due: {dueDate}</Text>
+                          <Text style={styles.edgDueBadgeText}>Due: {formatToDDMMYYYY(dueDate)}</Text>
                         </View>
                       ) : null}
                     </View>
@@ -1424,7 +1471,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                         label="Due Date"
                         value={dueDate}
                         onChange={setDueDate}
-                        placeholder="2026-10-15"
+                        placeholder="DD/MM/YYYY"
                         style={{ flex: 1 }}
                       />
                     </View>
@@ -1472,14 +1519,14 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                         label="Custom Start Date"
                         value={customStart}
                         onChange={setCustomStart}
-                        placeholder={derivedDates.start}
+                        placeholder={formatToDDMMYYYY(derivedDates.start)}
                         style={{ flex: 1 }}
                       />
                       <DateField
                         label="Custom End Date"
                         value={customEnd}
                         onChange={setCustomEnd}
-                        placeholder={derivedDates.end}
+                        placeholder={formatToDDMMYYYY(derivedDates.end)}
                         style={{ flex: 1 }}
                       />
                     </View>
@@ -1560,6 +1607,29 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
             </View>
           </View>
         </View>
+
+        {/* ── Date Picker Modals for Mode A (Bill View) ── */}
+        <DatePickerModal
+          visible={showBillDatePicker}
+          value={customEnd || derivedDates.end}
+          title="Select Bill Date"
+          onSelect={(date) => {
+            setCustomEnd(date);
+            setShowBillDatePicker(false);
+          }}
+          onClose={() => setShowBillDatePicker(false)}
+        />
+
+        <DatePickerModal
+          visible={showDueDatePicker}
+          value={dueDate || customEnd || derivedDates.end}
+          title="Select Due Date"
+          onSelect={(date) => {
+            setDueDate(date);
+            setShowDueDatePicker(false);
+          }}
+          onClose={() => setShowDueDatePicker(false)}
+        />
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -2332,10 +2402,42 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: 4,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 0,
+    height: 34,
     fontSize: 12,
     fontWeight: FONT.semi,
     color: COLORS.text,
+  },
+  edgMetaDateBtnWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  edgMetaDateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    height: 34,
+    paddingRight: 24,
+  },
+  edgMetaDateText: {
+    fontSize: 12,
+    fontWeight: FONT.semi,
+    color: COLORS.text,
+    flex: 1,
+  },
+  edgMetaDatePlaceholder: {
+    color: COLORS.textMuted,
+    fontWeight: FONT.regular,
+  },
+  edgDateClearBtn: {
+    position: 'absolute',
+    right: 6,
+    top: 9,
   },
 
   // Instruction Banner

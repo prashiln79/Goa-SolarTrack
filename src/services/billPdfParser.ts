@@ -4,6 +4,7 @@
 // digital EDG electricity bills.
 // Resilient exception-safe parser for production mobile usage.
 // ============================================================
+import { inflate } from 'pako';
 
 export interface ParseDiagnostics {
   success: boolean;
@@ -189,6 +190,8 @@ export function decodeHexString(hex: string): string {
 /**
  * Extracts plain text from raw PDF data.
  * Handles:
+ *   • Decompression of FlateDecode zlib streams with pako
+ *   • Translation of ToUnicode CMaps (supporting Microsoft Print To PDF & web portals)
  *   • Hex-encoded strings:    <48656C6C6F> Tj   (used by EDG/Goa Electricity bills)
  *   • Parenthesised strings:  (Hello World) Tj
  *   • TJ arrays:              [(text) -100 (more)] TJ
@@ -204,66 +207,192 @@ export function extractTextFromPdfContent(raw: string): string {
     const textChunks: string[] = [];
     const MAX_CHUNKS = 30000;
 
-    // 1. Hex-encoded strings: <HEX> Tj  (EDG bills use this)
+    // ── A. Parse all CMaps (ToUnicode mappings) in the PDF ──
+    const masterCMap: Record<number, string> = {};
     try {
-      const hexTjRegex = /<([0-9A-Fa-f\s]+)>\s*Tj/g;
-      let match: RegExpExecArray | null;
-      let count = 0;
-      while ((match = hexTjRegex.exec(raw)) !== null && count < MAX_CHUNKS) {
-        count++;
-        if (match[1]) {
-          const decoded = decodeHexString(match[1]);
-          if (decoded.trim()) textChunks.push(decoded);
+      const cmapBlocks = raw.split('begincmap');
+      for (let i = 1; i < cmapBlocks.length; i++) {
+        const endIdx = cmapBlocks[i].indexOf('endcmap');
+        if (endIdx !== -1) {
+          const block = cmapBlocks[i].slice(0, endIdx);
+          // Parse bfchar entries: <0033> <0050>
+          const bfcharMatch = block.match(/beginbfchar([\s\S]*?)endbfchar/);
+          if (bfcharMatch) {
+            const pairs = bfcharMatch[1].match(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g);
+            if (pairs) {
+              for (const p of pairs) {
+                const parts = p.match(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/);
+                if (parts) {
+                  masterCMap[parseInt(parts[1], 16)] = String.fromCharCode(parseInt(parts[2], 16));
+                }
+              }
+            }
+          }
+          // Parse bfrange entries: <0000> <0005> <0020>
+          const bfrangeMatch = block.match(/beginbfrange([\s\S]*?)endbfrange/);
+          if (bfrangeMatch) {
+            const triples = bfrangeMatch[1].match(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g);
+            if (triples) {
+              for (const tr of triples) {
+                const parts = tr.match(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/);
+                if (parts) {
+                  const start = parseInt(parts[1], 16);
+                  const end = parseInt(parts[2], 16);
+                  let to = parseInt(parts[3], 16);
+                  for (let c = start; c <= end; c++) {
+                    masterCMap[c] = String.fromCharCode(to++);
+                  }
+                }
+              }
+            }
+          }
         }
       }
-    } catch (hexErr) {
-      console.warn('[PDF Parser] Hex chunk extraction error:', hexErr);
+    } catch (cmapErr) {
+      console.warn('[PDF Parser] CMap parse error:', cmapErr);
     }
 
-    // 2. Parenthesised strings: (text) Tj
+    // ── B. FlateDecode / Decompressed Content Streams ──
     try {
-      const tjRegex = /\(([^)]+)\)\s*Tj/g;
-      let match: RegExpExecArray | null;
-      let count = 0;
-      while ((match = tjRegex.exec(raw)) !== null && count < MAX_CHUNKS) {
-        count++;
-        if (match[1] && match[1].trim()) {
-          textChunks.push(match[1]);
+      const streamRegex = /<<([^>]*)>>\s*stream\r?\n([\s\S]*?)\r?\nendstream/g;
+      let sm: RegExpExecArray | null;
+      let streamCount = 0;
+      while ((sm = streamRegex.exec(raw)) !== null && streamCount < 60) {
+        streamCount++;
+        const dict = sm[1];
+        const rawStream = sm[2];
+        // Skip images and font files
+        if (dict.includes('/Image') || dict.includes('/Length1')) continue;
+
+        let decompressedStr = '';
+        if (dict.includes('/FlateDecode')) {
+          try {
+            const u8 = new Uint8Array(rawStream.length);
+            for (let i = 0; i < rawStream.length; i++) u8[i] = rawStream.charCodeAt(i);
+            const inflated = inflate(u8);
+            let s = '';
+            for (let i = 0; i < inflated.length; i++) s += String.fromCharCode(inflated[i]);
+            decompressedStr = s;
+          } catch {}
+        } else {
+          decompressedStr = rawStream;
+        }
+
+        if (!decompressedStr || !decompressedStr.includes('BT')) continue;
+
+        const lines = decompressedStr.split(/\r?\n/);
+        for (const line of lines) {
+          // TJ array: [<0026>-100<0044>] TJ or [(text) -100 (more)] TJ
+          const tjMatch = line.match(/\[(.*?)\]\s*TJ/);
+          if (tjMatch) {
+            const inner = tjMatch[1];
+            const tokenRegex = /<([0-9A-Fa-f]+)>|\(([^)]*)\)|(-?\d+(?:\.\d+)?)/g;
+            let t: RegExpExecArray | null;
+            let word = '';
+            while ((t = tokenRegex.exec(inner)) !== null) {
+              if (t[1]) {
+                const hex = t[1];
+                for (let i = 0; i < hex.length; i += 4) {
+                  const code = parseInt(hex.slice(i, i + 4), 16);
+                  word += masterCMap[code] !== undefined
+                    ? masterCMap[code]
+                    : (code >= 32 && code <= 126 ? String.fromCharCode(code) : '');
+                }
+              } else if (t[2]) {
+                word += t[2];
+              } else if (t[3]) {
+                if (parseFloat(t[3]) < -100) word += ' ';
+              }
+            }
+            if (word.trim()) textChunks.push(word);
+          }
+
+          // Single Tj operator
+          const singleTj = line.match(/(?:<([0-9A-Fa-f]+)>|\(([^)]*)\))\s*Tj/);
+          if (singleTj) {
+            if (singleTj[1]) {
+              const hex = singleTj[1];
+              let word = '';
+              for (let i = 0; i < hex.length; i += 4) {
+                const code = parseInt(hex.slice(i, i + 4), 16);
+                word += masterCMap[code] !== undefined
+                  ? masterCMap[code]
+                  : (code >= 32 && code <= 126 ? String.fromCharCode(code) : '');
+              }
+              if (word.trim()) textChunks.push(word);
+            } else if (singleTj[2] && singleTj[2].trim()) {
+              textChunks.push(singleTj[2]);
+            }
+          }
         }
       }
-    } catch (tjErr) {
-      console.warn('[PDF Parser] Tj string extraction error:', tjErr);
+    } catch (decompErr) {
+      console.warn('[PDF Parser] Stream decompression error:', decompErr);
     }
 
-    // 3. TJ arrays: [(text) -100 (more)] TJ or [<HEX> -100 <HEX>] TJ
-    try {
-      const arrayRegex = /\[([^\]]+)\]\s*TJ/g;
-      let match: RegExpExecArray | null;
-      let count = 0;
-      while ((match = arrayRegex.exec(raw)) !== null && count < MAX_CHUNKS) {
-        count++;
-        const inner = match[1];
-        if (!inner) continue;
-
-        // Sub-match parenthesised text
-        const parenSub = inner.match(/\(([^)]+)\)/g);
-        if (parenSub) {
-          textChunks.push(parenSub.map((s) => s.slice(1, -1)).join(' '));
+    // ── C. Uncompressed hex <HEX> Tj and (text) Tj fallback/addition ──
+    if (textChunks.length === 0) {
+      // 1. Hex-encoded strings: <HEX> Tj (EDG bills use this)
+      try {
+        const hexTjRegex = /<([0-9A-Fa-f\s]+)>\s*Tj/g;
+        let match: RegExpExecArray | null;
+        let count = 0;
+        while ((match = hexTjRegex.exec(raw)) !== null && count < MAX_CHUNKS) {
+          count++;
+          if (match[1]) {
+            const decoded = decodeHexString(match[1]);
+            if (decoded.trim()) textChunks.push(decoded);
+          }
         }
-
-        // Sub-match hex in arrays: <HEX>
-        const hexSub = inner.match(/<([0-9A-Fa-f\s]+)>/g);
-        if (hexSub) {
-          textChunks.push(
-            hexSub
-              .map((s) => decodeHexString(s.slice(1, -1)))
-              .filter(Boolean)
-              .join(' ')
-          );
-        }
+      } catch (hexErr) {
+        console.warn('[PDF Parser] Hex chunk extraction error:', hexErr);
       }
-    } catch (arrayErr) {
-      console.warn('[PDF Parser] TJ array extraction error:', arrayErr);
+
+      // 2. Parenthesised strings: (text) Tj
+      try {
+        const tjRegex = /\(([^)]+)\)\s*Tj/g;
+        let match: RegExpExecArray | null;
+        let count = 0;
+        while ((match = tjRegex.exec(raw)) !== null && count < MAX_CHUNKS) {
+          count++;
+          if (match[1] && match[1].trim()) {
+            textChunks.push(match[1]);
+          }
+        }
+      } catch (tjErr) {
+        console.warn('[PDF Parser] Tj string extraction error:', tjErr);
+      }
+
+      // 3. TJ arrays: [(text) -100 (more)] TJ or [<HEX> -100 <HEX>] TJ
+      try {
+        const arrayRegex = /\[([^\]]+)\]\s*TJ/g;
+        let match: RegExpExecArray | null;
+        let count = 0;
+        while ((match = arrayRegex.exec(raw)) !== null && count < MAX_CHUNKS) {
+          count++;
+          const inner = match[1];
+          if (!inner) continue;
+
+          // Sub-match parenthesised text
+          const parenSub = inner.match(/\(([^)]+)\)/g);
+          if (parenSub) {
+            textChunks.push(parenSub.map((s) => s.slice(1, -1)).join(' '));
+          }
+
+          // Sub-match hex in arrays: <HEX>
+          const hexSub = inner.match(/<([0-9A-Fa-f]+)>/g);
+          if (hexSub) {
+            textChunks.push(
+              hexSub
+                .map((s) => decodeHexString(s.slice(1, -1)))
+                .filter(Boolean)
+                .join(' ')
+            );
+          }
+        }
+      } catch (arrayErr) {
+        console.warn('[PDF Parser] TJ array extraction error:', arrayErr);
+      }
     }
 
     if (textChunks.length > 0) {
@@ -440,7 +569,7 @@ export function parseGoaBillText(text: string): ParsedBillData {
               result.periodYear = derived.periodYear;
               result.periodLabel = derived.periodLabel;
             }
-          } catch (_) {}
+          } catch {}
         }
       }
     } else {
@@ -459,10 +588,10 @@ export function parseGoaBillText(text: string): ParsedBillData {
     warnings.push(`KWH_G parse failed: ${e}`);
   }
 
-  // Extract Grid Import (KWH_I)
+  // Extract Grid Import (KWH_I or domestic KWH)
   try {
     const iFullRow = clean.match(
-      /KWH_I\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+)\s+(\d+(?:\.\d+)?)\s+\d+(?:\.\d+)?\s+(\d+(?:\.\d+)?)/i
+      /(?:KWH_I|(?<!Export\s)\bKWH)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+\d+(?:\.\d+)?\s+(\d+(?:\.\d+)?)/i
     );
     if (iFullRow) {
       const val = safeParseFloat(iFullRow[6]);
@@ -489,14 +618,14 @@ export function parseGoaBillText(text: string): ParsedBillData {
               result.periodYear = derived.periodYear;
               result.periodLabel = derived.periodLabel;
             }
-          } catch (_) {}
+          } catch {}
         }
       }
     } else {
       const iAlt =
-        clean.match(/KWH_I[^\n\r]*?(\d+(?:\.\d+)?)\s+1\.00\s+(\d+(?:\.\d+)?)/i) ||
-        clean.match(/KWH_I\s+(?:\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4}\s+)?(?:\d+\s+){2,3}(\d+)\s+OK/i) ||
-        clean.match(/KWH_I[^\n\r]*?(\d+(?:\.\d+)?)\s+OK/i);
+        clean.match(/(?:KWH_I|(?<!Export\s)\bKWH)[^\n\r]*?(\d+(?:\.\d+)?)\s+1\.00\s+(\d+(?:\.\d+)?)/i) ||
+        clean.match(/(?:KWH_I|(?<!Export\s)\bKWH)\s+(?:\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4}\s+)?(?:\d+(?:\.\d+)?\s+){2,3}(\d+(?:\.\d+)?)\s+OK/i) ||
+        clean.match(/(?:KWH_I|(?<!Export\s)\bKWH)[^\n\r]*?(\d+(?:\.\d+)?)\s+OK/i);
       if (iAlt) {
         const lastCapture = iAlt[iAlt.length - 1];
         const val = safeParseFloat(lastCapture);
@@ -510,7 +639,7 @@ export function parseGoaBillText(text: string): ParsedBillData {
   // Extract Grid Export (KWH_E)
   try {
     const eFullRow = clean.match(
-      /KWH_E\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+)\s+(\d+(?:\.\d+)?)\s+\d+(?:\.\d+)?\s+(\d+(?:\.\d+)?)/i
+      /KWH_E\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+\d+(?:\.\d+)?\s+(\d+(?:\.\d+)?)/i
     );
     if (eFullRow) {
       const val = safeParseFloat(eFullRow[6]);
@@ -518,12 +647,18 @@ export function parseGoaBillText(text: string): ParsedBillData {
     } else {
       const eAlt =
         clean.match(/KWH_E[^\n\r]*?(\d+(?:\.\d+)?)\s+1\.00\s+(\d+(?:\.\d+)?)/i) ||
-        clean.match(/KWH_E\s+(?:\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4}\s+)?(?:\d+\s+){2,3}(\d+)\s+OK/i) ||
+        clean.match(/KWH_E\s+(?:\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4}\s+)?(?:\d+(?:\.\d+)?\s+){2,3}(\d+(?:\.\d+)?)\s+OK/i) ||
         clean.match(/KWH_E[^\n\r]*?(\d+(?:\.\d+)?)\s+OK/i);
       if (eAlt) {
         const lastCapture = eAlt[eAlt.length - 1];
         const val = safeParseFloat(lastCapture);
         if (val !== undefined) result.exportKwh = val;
+      } else if (
+        /Export KWH\s+Prev\.Balance\s+Curr\.Period\s+Adjusted\s+0/i.test(clean) ||
+        /Export KWH[^\d]*?Adjusted\s+0/i.test(clean) ||
+        /Export KWH\s+Prev\.Balance\s+0/i.test(clean)
+      ) {
+        result.exportKwh = 0;
       }
     }
   } catch (e) {
@@ -553,6 +688,13 @@ export function parseGoaBillText(text: string): ParsedBillData {
       if (bankMatch?.[1]) {
         const val = safeParseFloat(bankMatch[1]);
         if (val !== undefined) result.openingCreditKwh = val;
+      } else if (
+        /Export KWH\s+Prev\.Balance\s+Curr\.Period\s+Adjusted\s+0/i.test(clean) ||
+        /Export KWH[^\n\r]*?Adjusted\s+0/i.test(clean)
+      ) {
+        result.openingCreditKwh = 0;
+        result.adjustedCreditKwh = 0;
+        result.closingCreditKwh = 0;
       }
     }
   } catch (e) {
@@ -580,15 +722,18 @@ export function parseGoaBillText(text: string): ParsedBillData {
   try {
     const demandMatch =
       clean.match(/Demand\/Fixed Charges\s+(\d+(?:\.\d+)?)/i) ||
-      clean.match(/Fixed Charges\s+(\d+(?:\.\d+)?)/i);
+      clean.match(/Fixed Charges\s+(\d+(?:\.\d+)?)/i) ||
+      clean.match(/(\d+(?:\.\d+)?)\s+Demand\/Fixed Charges/i) ||
+      clean.match(/(\d+(?:\.\d+)?)\s+(?:Demand\/)?Fixed Charges/i);
     if (demandMatch?.[1]) {
       const val = safeParseFloat(demandMatch[1]);
       if (val !== undefined) result.demandCharges = val;
     }
 
-    const fppcaMatch = clean.match(
-      /Fuel and Power Purchase Cost Adjustment\s+(\d+(?:\.\d+)?)/i
-    );
+    const fppcaMatch =
+      clean.match(/(\d+(?:\.\d+)?)\s+Fuel and Power Purchase Cost Adjustment/i) ||
+      clean.match(/Fuel and Power Purchase Cost Adjustment\s*[:\-]?\s*(\d+(?:\.\d+)?)(?!\s*Energy)/i) ||
+      clean.match(/FPPCA\s*[:\-]?\s*(\d+(?:\.\d+)?)/i);
     if (fppcaMatch?.[1]) {
       const val = safeParseFloat(fppcaMatch[1]);
       if (val !== undefined) result.fppca = val;

@@ -757,10 +757,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   All your electricity bills, solar generations, and care logs are stored directly on your phone in encrypted SQLite / AsyncStorage, with cloud synchronization to Firebase when online.
                 </Text>
               </View>
+{/* 
+              <Text style={styles.sectionHeading}>Diagnostic & Developer Tools</Text> */}
 
-              <Text style={styles.sectionHeading}>Diagnostic & Developer Tools</Text>
-
-              <TouchableOpacity
+              {/* <TouchableOpacity
                 style={styles.toolBtn}
                 onPress={handleTestConnection}
                 disabled={isTestingConn}
@@ -788,7 +788,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <Text style={styles.toolBtnTitle}>Run Domain Verification Tests</Text>
                   <Text style={styles.toolBtnSub}>Verify energy ledger and edge case math</Text>
                 </View>
-              </TouchableOpacity>
+              </TouchableOpacity> */}
             </ScrollView>
 
             <View style={[styles.modalFooter, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>

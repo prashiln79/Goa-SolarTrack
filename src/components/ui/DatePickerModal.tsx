@@ -28,15 +28,60 @@ const MONTH_NAMES = [
 
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-function parseYMD(dateStr?: string): { year: number; month: number; day: number } {
-  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
-      return { year: y, month: m - 1, day: d };
+export function parseYMD(dateStr?: string): { year: number; month: number; day: number } {
+  if (dateStr) {
+    const trimmed = dateStr.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [y, m, d] = trimmed.split('-').map(Number);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        return { year: y, month: m - 1, day: d };
+      }
+    }
+    if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(trimmed)) {
+      const parts = trimmed.split(/[\/\-]/).map(Number);
+      const d = parts[0];
+      const m = parts[1];
+      const y = parts[2];
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        return { year: y, month: m - 1, day: d };
+      }
     }
   }
   const now = new Date();
   return { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() };
+}
+
+export function formatToDDMMYYYY(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  const trimmed = dateStr.trim();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const [y, m, d] = trimmed.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
+    const [d, m, y] = trimmed.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  return trimmed;
+}
+
+export function formatToYYYYMMDD(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  const trimmed = dateStr.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(trimmed)) {
+    const parts = trimmed.split(/[\/\-]/);
+    const d = parts[0].padStart(2, '0');
+    const m = parts[1].padStart(2, '0');
+    const y = parts[2];
+    return `${y}-${m}-${d}`;
+  }
+  return trimmed;
 }
 
 function formatYMD(year: number, month: number, day: number): string {
@@ -151,7 +196,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
             <View>
               <Text style={styles.dialogTitle}>{title}</Text>
               <Text style={styles.dialogSubtitle}>
-                {selectedYMD ? selectedYMD : 'No date chosen'}
+                {selectedYMD ? formatToDDMMYYYY(selectedYMD) : 'No date chosen'}
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -273,7 +318,7 @@ export const DateField: React.FC<DateFieldProps> = ({
   label,
   value,
   onChange,
-  placeholder = 'YYYY-MM-DD',
+  placeholder = 'DD/MM/YYYY',
   style,
   required = false,
 }) => {
@@ -291,7 +336,7 @@ export const DateField: React.FC<DateFieldProps> = ({
       >
         <Ionicons name="calendar-outline" size={17} color={COLORS.gold} style={{ marginRight: 8 }} />
         <Text style={[styles.fieldValueText, !value && { color: COLORS.textMuted }]}>
-          {value || placeholder}
+          {value ? formatToDDMMYYYY(value) : placeholder}
         </Text>
       </TouchableOpacity>
 
