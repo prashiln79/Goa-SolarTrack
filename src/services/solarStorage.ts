@@ -335,11 +335,54 @@ export async function getBills(consumerNumber?: string): Promise<SolarBill[]> {
   return getLocalBills(cNum);
 }
 
+export function validateAndSanitizeBill(bill: SolarBill): SolarBill {
+  const sanitizeNum = (v: number | null | undefined, def: number, max: number, min = 0): number => {
+    if (v === null || v === undefined || !Number.isFinite(v) || isNaN(v)) return def;
+    return Math.max(min, Math.min(max, Number(v.toFixed(2))));
+  };
+  const sanitizeOptionalNum = (v: number | null | undefined, max: number, min = 0): number | undefined => {
+    if (v === null || v === undefined || !Number.isFinite(v) || isNaN(v)) return undefined;
+    return Math.max(min, Math.min(max, Number(v.toFixed(2))));
+  };
+
+  const importKwh = sanitizeNum(bill.importKwh, 0, 100000, 0);
+  const exportKwh = sanitizeNum(bill.exportKwh, 0, 100000, 0);
+  const openingCreditKwh = sanitizeNum(bill.openingCreditKwh, 0, 100000, 0);
+  const generationKwh =
+    bill.generationKwh !== null && bill.generationKwh !== undefined
+      ? sanitizeNum(bill.generationKwh, 0, 100000, 0)
+      : null;
+  const billAmount = sanitizeNum(bill.billAmount, 0, 1000000, 0);
+  const billingDays = Math.max(1, Math.min(120, Math.round(bill.billingDays || 30)));
+
+  return {
+    ...bill,
+    billingDays,
+    importKwh,
+    exportKwh,
+    openingCreditKwh,
+    generationKwh,
+    billAmount,
+    adjustedCreditKwh: sanitizeNum(bill.adjustedCreditKwh, 0, 100000, 0),
+    closingCreditKwh: sanitizeNum(bill.closingCreditKwh, 0, 100000, 0),
+    availableCreditKwh: sanitizeNum(bill.availableCreditKwh, 0, 200000, 0),
+    netBilledImportKwh: sanitizeNum(bill.netBilledImportKwh, 0, 100000, 0),
+    directSolarUseKwh:
+      bill.directSolarUseKwh !== null && bill.directSolarUseKwh !== undefined
+        ? sanitizeNum(bill.directSolarUseKwh, 0, 100000, 0)
+        : null,
+    demandCharges: sanitizeOptionalNum(bill.demandCharges, 100000, 0),
+    fppca: sanitizeOptionalNum(bill.fppca, 100000, 0),
+    rebate: sanitizeOptionalNum(bill.rebate, 50000, -50000),
+  };
+}
+
 export async function saveBill(bill: SolarBill, consumerNumber?: string): Promise<void> {
   const cNum = consumerNumber ?? bill.consumerNumber ?? _activeConsumerNumber ?? 'primary';
 
+  const sanitized = validateAndSanitizeBill(bill);
   const billWithConsumer: SolarBill = {
-    ...bill,
+    ...sanitized,
     consumerNumber: cNum,
   };
 

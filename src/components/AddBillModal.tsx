@@ -47,9 +47,62 @@ const SHORT_MONTHS = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
+export const BILL_LIMITS = {
+  MAX_KWH: 100000,          // 100,000 kWh per month maximum realistic solar rooftop bounds
+  MIN_KWH: 0,
+  MAX_BILL_AMOUNT: 1000000, // ₹ 10,00,000 (10 Lakhs INR)
+  MIN_BILL_AMOUNT: 0,
+  MIN_BILLING_DAYS: 1,
+  MAX_BILLING_DAYS: 120,    // 1 to 120 days
+  MAX_CHARGE: 100000,       // ₹ 1,00,000
+  MAX_REBATE: 50000,        // ₹ 50,000
+  MIN_REBATE: -50000,       // -₹ 50,000
+  MAX_BILL_NUM_LEN: 30,
+  MAX_NOTES_LEN: 250,
+};
+
+export function sanitizeDecimalInput(text: string, maxDecimals = 2, maxWholeDigits = 6): string {
+  const cleaned = text.replace(/[^0-9.]/g, '');
+  const parts = cleaned.split('.');
+  if (parts.length > 2) {
+    parts[1] = parts.slice(1).join('');
+    parts.length = 2;
+  }
+  const whole = parts[0].slice(0, maxWholeDigits);
+  if (parts.length === 2) {
+    const decimals = parts[1].slice(0, maxDecimals);
+    return `${whole}.${decimals}`;
+  }
+  return whole;
+}
+
+export function sanitizeIntegerInput(text: string, maxDigits = 3): string {
+  return text.replace(/[^0-9]/g, '').slice(0, maxDigits);
+}
+
+export function sanitizeSignedDecimalInput(text: string, maxDecimals = 2, maxWholeDigits = 6): string {
+  const isNegative = text.trim().startsWith('-');
+  const cleaned = text.replace(/[^0-9.]/g, '');
+  const parts = cleaned.split('.');
+  if (parts.length > 2) {
+    parts[1] = parts.slice(1).join('');
+    parts.length = 2;
+  }
+  const whole = parts[0].slice(0, maxWholeDigits);
+  let res = whole;
+  if (parts.length === 2) {
+    res = `${whole}.${parts[1].slice(0, maxDecimals)}`;
+  }
+  return isNegative ? `-${res}` : res;
+}
+
 function parseNum(s: string): number | null {
-  const v = parseFloat(s.trim());
-  return isNaN(v) || s.trim() === '' ? null : v;
+  if (typeof s !== 'string') return null;
+  const trimmed = s.trim();
+  if (trimmed === '') return null;
+  if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return null;
+  const v = parseFloat(trimmed);
+  return Number.isFinite(v) && !isNaN(v) ? v : null;
 }
 
 /**
@@ -503,12 +556,82 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     }
   };
 
+  // ── Real-time input validation & overflow detection ──
+  const validationIssues = useMemo(() => {
+    const issues: { field: string; message: string }[] = [];
+    const imp = parseNum(importKwh);
+    const exp = parseNum(exportKwh);
+    const amount = parseNum(billAmount);
+    const gen = parseNum(generationKwh);
+    const opening = parseNum(openingCredit);
+
+    if (importKwh.trim() !== '') {
+      if (imp === null) issues.push({ field: 'import', message: 'Grid Import must be a valid number.' });
+      else if (imp < BILL_LIMITS.MIN_KWH) issues.push({ field: 'import', message: 'Grid Import cannot be negative.' });
+      else if (imp > BILL_LIMITS.MAX_KWH) issues.push({ field: 'import', message: `Grid Import cannot exceed ${BILL_LIMITS.MAX_KWH.toLocaleString('en-IN')} kWh.` });
+    }
+
+    if (exportKwh.trim() !== '') {
+      if (exp === null) issues.push({ field: 'export', message: 'Grid Export must be a valid number.' });
+      else if (exp < BILL_LIMITS.MIN_KWH) issues.push({ field: 'export', message: 'Grid Export cannot be negative.' });
+      else if (exp > BILL_LIMITS.MAX_KWH) issues.push({ field: 'export', message: `Grid Export cannot exceed ${BILL_LIMITS.MAX_KWH.toLocaleString('en-IN')} kWh.` });
+    }
+
+    if (billAmount.trim() !== '') {
+      if (amount === null) issues.push({ field: 'amount', message: 'Bill Amount must be a valid number.' });
+      else if (amount < BILL_LIMITS.MIN_BILL_AMOUNT) issues.push({ field: 'amount', message: 'Bill Amount cannot be negative.' });
+      else if (amount > BILL_LIMITS.MAX_BILL_AMOUNT) issues.push({ field: 'amount', message: `Bill Amount cannot exceed ₹${BILL_LIMITS.MAX_BILL_AMOUNT.toLocaleString('en-IN')}.` });
+    }
+
+    if (generationKwh.trim() !== '') {
+      if (gen === null) issues.push({ field: 'generation', message: 'Solar Generation must be a valid number.' });
+      else if (gen < BILL_LIMITS.MIN_KWH) issues.push({ field: 'generation', message: 'Solar Generation cannot be negative.' });
+      else if (gen > BILL_LIMITS.MAX_KWH) issues.push({ field: 'generation', message: `Solar Generation cannot exceed ${BILL_LIMITS.MAX_KWH.toLocaleString('en-IN')} kWh.` });
+    }
+
+    if (openingCredit.trim() !== '') {
+      if (opening === null) issues.push({ field: 'opening', message: 'Opening Credit must be a valid number.' });
+      else if (opening < BILL_LIMITS.MIN_KWH) issues.push({ field: 'opening', message: 'Opening Credit cannot be negative.' });
+      else if (opening > BILL_LIMITS.MAX_KWH) issues.push({ field: 'opening', message: `Opening Credit cannot exceed ${BILL_LIMITS.MAX_KWH.toLocaleString('en-IN')} kWh.` });
+    }
+
+    if (customDays.trim() !== '') {
+      const days = parseInt(customDays, 10);
+      if (isNaN(days) || days < BILL_LIMITS.MIN_BILLING_DAYS || days > BILL_LIMITS.MAX_BILLING_DAYS) {
+        issues.push({ field: 'days', message: `Billing days must be between ${BILL_LIMITS.MIN_BILLING_DAYS} and ${BILL_LIMITS.MAX_BILLING_DAYS}.` });
+      }
+    }
+
+    // Physical consistency check
+    if (gen !== null && gen > 0 && exp !== null && exp > gen) {
+      issues.push({
+        field: 'export_exceeds_gen',
+        message: `Grid Export (${exp.toLocaleString('en-IN')} kWh) exceeds Solar Generation (${gen.toLocaleString('en-IN')} kWh).`,
+      });
+    }
+
+    return issues;
+  }, [importKwh, exportKwh, billAmount, generationKwh, openingCredit, customDays]);
+
+  const hasImportError = validationIssues.some((i) => i.field === 'import');
+  const hasExportError = validationIssues.some((i) => i.field === 'export' || i.field === 'export_exceeds_gen');
+  const hasAmountError = validationIssues.some((i) => i.field === 'amount');
+  const hasGenError = validationIssues.some((i) => i.field === 'generation' || i.field === 'export_exceeds_gen');
+  const hasOpeningError = validationIssues.some((i) => i.field === 'opening');
+  const hasDaysError = validationIssues.some((i) => i.field === 'days');
+
   // ── Live Energy Accounting calculation ──
   const liveCalc = useMemo(() => {
-    const imp = parseNum(importKwh) ?? 0;
-    const exp = parseNum(exportKwh) ?? 0;
-    const openCred = parseNum(openingCredit) ?? 0;
-    const gen = parseNum(generationKwh);
+    const rawImp = parseNum(importKwh) ?? 0;
+    const rawExp = parseNum(exportKwh) ?? 0;
+    const rawOpenCred = parseNum(openingCredit) ?? 0;
+    const rawGen = parseNum(generationKwh);
+
+    // Safeguard numbers against overflow for UI display
+    const imp = Math.min(BILL_LIMITS.MAX_KWH, Math.max(0, rawImp));
+    const exp = Math.min(BILL_LIMITS.MAX_KWH, Math.max(0, rawExp));
+    const openCred = Math.min(BILL_LIMITS.MAX_KWH, Math.max(0, rawOpenCred));
+    const gen = rawGen !== null ? Math.min(BILL_LIMITS.MAX_KWH, Math.max(0, rawGen)) : null;
 
     return calculateEnergyAccounting({
       generationKwh: gen,
@@ -537,9 +660,77 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       return;
     }
 
+    // Upper & Lower bound validation
+    if (imp < BILL_LIMITS.MIN_KWH || imp > BILL_LIMITS.MAX_KWH) {
+      const msg = `Grid Import (${imp.toLocaleString('en-IN')} kWh) must be between 0 and ${BILL_LIMITS.MAX_KWH.toLocaleString('en-IN')} kWh.`;
+      setSaveError(msg);
+      Alert.alert('Invalid Grid Import', msg);
+      return;
+    }
+
+    if (exp < BILL_LIMITS.MIN_KWH || exp > BILL_LIMITS.MAX_KWH) {
+      const msg = `Grid Export (${exp.toLocaleString('en-IN')} kWh) must be between 0 and ${BILL_LIMITS.MAX_KWH.toLocaleString('en-IN')} kWh.`;
+      setSaveError(msg);
+      Alert.alert('Invalid Grid Export', msg);
+      return;
+    }
+
+    if (amount < BILL_LIMITS.MIN_BILL_AMOUNT || amount > BILL_LIMITS.MAX_BILL_AMOUNT) {
+      const msg = `Bill Amount (₹${amount.toLocaleString('en-IN')}) must be between ₹0 and ₹${BILL_LIMITS.MAX_BILL_AMOUNT.toLocaleString('en-IN')}.`;
+      setSaveError(msg);
+      Alert.alert('Invalid Bill Amount', msg);
+      return;
+    }
+
     const gen = parseNum(generationKwh);
+    if (gen !== null && (gen < BILL_LIMITS.MIN_KWH || gen > BILL_LIMITS.MAX_KWH)) {
+      const msg = `Solar Generation (${gen.toLocaleString('en-IN')} kWh) must be between 0 and ${BILL_LIMITS.MAX_KWH.toLocaleString('en-IN')} kWh.`;
+      setSaveError(msg);
+      Alert.alert('Invalid Solar Generation', msg);
+      return;
+    }
+
     const opening = parseNum(openingCredit) ?? 0;
-    const days = parseInt(customDays) || derivedDates.daysInMonth;
+    if (opening < BILL_LIMITS.MIN_KWH || opening > BILL_LIMITS.MAX_KWH) {
+      const msg = `Opening Credit (${opening.toLocaleString('en-IN')} kWh) must be between 0 and ${BILL_LIMITS.MAX_KWH.toLocaleString('en-IN')} kWh.`;
+      setSaveError(msg);
+      Alert.alert('Invalid Opening Credit', msg);
+      return;
+    }
+
+    const parsedDays = customDays.trim() ? parseInt(customDays, 10) : derivedDates.daysInMonth;
+    if (isNaN(parsedDays) || parsedDays < BILL_LIMITS.MIN_BILLING_DAYS || parsedDays > BILL_LIMITS.MAX_BILLING_DAYS) {
+      const msg = `Billing days must be between ${BILL_LIMITS.MIN_BILLING_DAYS} and ${BILL_LIMITS.MAX_BILLING_DAYS} days.`;
+      setSaveError(msg);
+      Alert.alert('Invalid Billing Days', msg);
+      return;
+    }
+
+    const parsedDemand = parseNum(demandCharges);
+    if (parsedDemand !== null && (parsedDemand < 0 || parsedDemand > BILL_LIMITS.MAX_CHARGE)) {
+      const msg = `Demand charges cannot exceed ₹${BILL_LIMITS.MAX_CHARGE.toLocaleString('en-IN')}.`;
+      setSaveError(msg);
+      Alert.alert('Invalid Demand Charges', msg);
+      return;
+    }
+
+    const parsedFppca = parseNum(fppca);
+    if (parsedFppca !== null && (parsedFppca < 0 || parsedFppca > BILL_LIMITS.MAX_CHARGE)) {
+      const msg = `FPPCA charges cannot exceed ₹${BILL_LIMITS.MAX_CHARGE.toLocaleString('en-IN')}.`;
+      setSaveError(msg);
+      Alert.alert('Invalid FPPCA Charges', msg);
+      return;
+    }
+
+    const parsedRebate = parseNum(rebate);
+    if (parsedRebate !== null && (parsedRebate < BILL_LIMITS.MIN_REBATE || parsedRebate > BILL_LIMITS.MAX_REBATE)) {
+      const msg = `Rebate must be between -₹${BILL_LIMITS.MAX_REBATE.toLocaleString('en-IN')} and ₹${BILL_LIMITS.MAX_REBATE.toLocaleString('en-IN')}.`;
+      setSaveError(msg);
+      Alert.alert('Invalid Rebate', msg);
+      return;
+    }
+
+    const days = parsedDays;
     const start = formatToYYYYMMDD(customStart.trim() || derivedDates.start);
     const end = formatToYYYYMMDD(customEnd.trim() || derivedDates.end);
 
@@ -571,18 +762,17 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       ...(billAdjustedCredit !== null && { adjustedCreditKwh: billAdjustedCredit }),
       ...(billClosingCredit !== null && { closingCreditKwh: billClosingCredit }),
       billAmount: amount,
-      billNumber: billNumber.trim() || undefined,
+      billNumber: cleanBillNum || undefined,
       dueDate: dueDate.trim() ? formatToYYYYMMDD(dueDate.trim()) : undefined,
-      demandCharges: parseNum(demandCharges) ?? undefined,
-      fppca: parseNum(fppca) ?? undefined,
-      rebate: parseNum(rebate) ?? undefined,
+      demandCharges: parsedDemand ?? undefined,
+      fppca: parsedFppca ?? undefined,
+      rebate: parsedRebate ?? undefined,
       notes: notes.trim() || undefined,
       source: attachedPdf ? 'ocr_confirmed' : 'manual',
       sourceDocId: attachedPdf?.name,
       calculationVersion: 'v1.0',
       createdAt: Date.now(),
     };
-
 
     const commitSave = async () => {
       try {
@@ -598,38 +788,59 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       }
     };
 
-    // Prevent accidental duplicate submission for the same billing month
-    const targetPeriod = derivedDates.label;
-    const existingDuplicate = existingBills?.find((b) => {
-      if (cleanBillNum && b.billNumber && b.billNumber.trim() === cleanBillNum) {
-        return true;
-      }
-      if (b.period && b.period.toLowerCase() === targetPeriod.toLowerCase()) {
-        return true;
-      }
-      return false;
-    });
+    const proceedWithSave = async () => {
+      // Prevent accidental duplicate submission for the same billing month
+      const targetPeriod = derivedDates.label;
+      const existingDuplicate = existingBills?.find((b) => {
+        if (cleanBillNum && b.billNumber && b.billNumber.trim() === cleanBillNum) {
+          return true;
+        }
+        if (b.period && b.period.toLowerCase() === targetPeriod.toLowerCase()) {
+          return true;
+        }
+        return false;
+      });
 
-    if (existingDuplicate) {
-      Alert.alert(
-        'Bill Already Exists',
-        `A record for ${existingDuplicate.period}${existingDuplicate.billNumber ? ` (Bill #${existingDuplicate.billNumber})` : ''} already exists.\n\nDo you want to update and overwrite it with these values?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Overwrite & Save',
-            style: 'destructive',
-            onPress: () => {
-              bill.id = existingDuplicate.id;
-              commitSave();
+      if (existingDuplicate) {
+        Alert.alert(
+          'Bill Already Exists',
+          `A record for ${existingDuplicate.period}${existingDuplicate.billNumber ? ` (Bill #${existingDuplicate.billNumber})` : ''} already exists.\n\nDo you want to update and overwrite it with these values?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Overwrite & Save',
+              style: 'destructive',
+              onPress: () => {
+                bill.id = existingDuplicate.id;
+                commitSave();
+              },
             },
+          ]
+        );
+        return;
+      }
+
+      await commitSave();
+    };
+
+    // Physical consistency warning (Export cannot exceed Generation)
+    if (gen !== null && gen > 0 && exp > gen) {
+      Alert.alert(
+        'Export Exceeds Generation',
+        `You entered Grid Export (${exp.toLocaleString('en-IN')} kWh) which is greater than total Solar Generation (${gen.toLocaleString('en-IN')} kWh).\n\nA solar system cannot export more units than it generated. Do you want to review your readings or proceed anyway?`,
+        [
+          { text: 'Review Readings', style: 'cancel' },
+          {
+            text: 'Proceed Anyway',
+            style: 'destructive',
+            onPress: proceedWithSave,
           },
         ]
       );
       return;
     }
 
-    await commitSave();
+    await proceedWithSave();
   };
 
   return (
@@ -906,7 +1117,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       id="input-edg-bill-number"
                       style={styles.edgMetaInput}
                       value={billNumber}
-                      onChangeText={setBillNumber}
+                      onChangeText={(t) => setBillNumber(t.slice(0, BILL_LIMITS.MAX_BILL_NUM_LEN))}
+                      maxLength={BILL_LIMITS.MAX_BILL_NUM_LEN}
                       placeholder="e.g. 17000216006"
                       placeholderTextColor={COLORS.textMuted}
                     />
@@ -979,9 +1191,10 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     <Text style={styles.edgMetaLabel}>Billing Days</Text>
                     <TextInput
                       id="input-edg-billing-days"
-                      style={styles.edgMetaInput}
+                      style={[styles.edgMetaInput, hasDaysError && styles.inputError]}
                       value={customDays}
-                      onChangeText={setCustomDays}
+                      onChangeText={(t) => setCustomDays(sanitizeIntegerInput(t, 3))}
+                      maxLength={3}
                       placeholder={String(derivedDates.daysInMonth)}
                       placeholderTextColor={COLORS.textMuted}
                       keyboardType="numeric"
@@ -1014,12 +1227,13 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       <View style={styles.edgBankInputWrap}>
                         <TextInput
                           id="input-edg-prev-balance"
-                          style={styles.edgBankInput}
+                          style={[styles.edgBankInput, hasOpeningError && styles.inputError]}
                           value={openingCredit}
-                          onChangeText={setOpeningCredit}
+                          onChangeText={(t) => setOpeningCredit(sanitizeDecimalInput(t, 2, 6))}
+                          maxLength={9}
                           placeholder="0"
                           placeholderTextColor={COLORS.textMuted}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                         />
                         <Text style={styles.edgUnitSmall}>kWh</Text>
                       </View>
@@ -1036,12 +1250,13 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       <View style={styles.edgBankInputWrap}>
                         <TextInput
                           id="input-edg-curr-period"
-                          style={styles.edgBankInput}
+                          style={[styles.edgBankInput, hasExportError && styles.inputError]}
                           value={exportKwh}
-                          onChangeText={setExportKwh}
+                          onChangeText={(t) => setExportKwh(sanitizeDecimalInput(t, 2, 6))}
+                          maxLength={9}
                           placeholder="0"
                           placeholderTextColor={COLORS.textMuted}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                         />
                         <Text style={styles.edgUnitSmall}>kWh</Text>
                       </View>
@@ -1057,7 +1272,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       </View>
                       <View style={styles.edgBankInputWrap}>
                         <Text style={styles.edgBankStaticText}>
-                          {liveCalc.adjustedCreditKwh}
+                          {Number(liveCalc.adjustedCreditKwh).toLocaleString('en-IN')}
                         </Text>
                         <Text style={styles.edgUnitSmall}>kWh</Text>
                       </View>
@@ -1073,7 +1288,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       </View>
                       <View style={styles.edgBankInputWrap}>
                         <Text style={[styles.edgBankStaticText, { color: COLORS.bank, fontWeight: FONT.bold }]}>
-                          {liveCalc.closingCreditKwh}
+                          {Number(liveCalc.closingCreditKwh).toLocaleString('en-IN')}
                         </Text>
                         <Text style={styles.edgUnitSmall}>kWh</Text>
                       </View>
@@ -1110,12 +1325,17 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       <View style={styles.edgInputCell}>
                         <TextInput
                           id="input-edg-import-kwh"
-                          style={[styles.edgTableInput, !importKwh && styles.edgInputPending]}
+                          style={[
+                            styles.edgTableInput,
+                            !importKwh && styles.edgInputPending,
+                            hasImportError && styles.inputError,
+                          ]}
                           value={importKwh}
-                          onChangeText={setImportKwh}
+                          onChangeText={(t) => setImportKwh(sanitizeDecimalInput(t, 2, 6))}
+                          maxLength={9}
                           placeholder="241"
                           placeholderTextColor={COLORS.textMuted}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                         />
                         <Text style={styles.edgUnitLabel}>kWh</Text>
                       </View>
@@ -1135,12 +1355,17 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       <View style={styles.edgInputCell}>
                         <TextInput
                           id="input-edg-export-kwh"
-                          style={[styles.edgTableInput, !exportKwh && styles.edgInputPending]}
+                          style={[
+                            styles.edgTableInput,
+                            !exportKwh && styles.edgInputPending,
+                            hasExportError && styles.inputError,
+                          ]}
                           value={exportKwh}
-                          onChangeText={setExportKwh}
+                          onChangeText={(t) => setExportKwh(sanitizeDecimalInput(t, 2, 6))}
+                          maxLength={9}
                           placeholder="331"
                           placeholderTextColor={COLORS.textMuted}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                         />
                         <Text style={styles.edgUnitLabel}>kWh</Text>
                       </View>
@@ -1160,12 +1385,13 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       <View style={styles.edgInputCell}>
                         <TextInput
                           id="input-edg-gen-kwh"
-                          style={styles.edgTableInput}
+                          style={[styles.edgTableInput, hasGenError && styles.inputError]}
                           value={generationKwh}
-                          onChangeText={setGenerationKwh}
+                          onChangeText={(t) => setGenerationKwh(sanitizeDecimalInput(t, 2, 6))}
+                          maxLength={9}
                           placeholder="431"
                           placeholderTextColor={COLORS.textMuted}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                         />
                         <Text style={styles.edgUnitLabel}>kWh</Text>
                       </View>
@@ -1222,12 +1448,17 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       <Text style={styles.edgRupeeSymbol}>₹</Text>
                       <TextInput
                         id="input-edg-bill-amount"
-                        style={[styles.edgPayableInput, !billAmount && styles.edgInputPending]}
+                        style={[
+                          styles.edgPayableInput,
+                          !billAmount && styles.edgInputPending,
+                          hasAmountError && styles.inputError,
+                        ]}
                         value={billAmount}
-                        onChangeText={setBillAmount}
+                        onChangeText={(t) => setBillAmount(sanitizeDecimalInput(t, 2, 7))}
+                        maxLength={10}
                         placeholder="0.00"
                         placeholderTextColor={COLORS.textMuted}
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
                       />
                     </View>
 
@@ -1268,10 +1499,11 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                           id="input-edg-demand-charges"
                           style={styles.edgChargesInput}
                           value={demandCharges}
-                          onChangeText={setDemandCharges}
+                          onChangeText={(t) => setDemandCharges(sanitizeDecimalInput(t, 2, 6))}
+                          maxLength={9}
                           placeholder="223.46"
                           placeholderTextColor={COLORS.textMuted}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                         />
                       </View>
                     </View>
@@ -1284,10 +1516,11 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                           id="input-edg-fppca"
                           style={styles.edgChargesInput}
                           value={fppca}
-                          onChangeText={setFppca}
+                          onChangeText={(t) => setFppca(sanitizeDecimalInput(t, 2, 6))}
+                          maxLength={9}
                           placeholder="42.98"
                           placeholderTextColor={COLORS.textMuted}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                         />
                       </View>
                     </View>
@@ -1300,10 +1533,11 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                           id="input-edg-rebate"
                           style={styles.edgChargesInput}
                           value={rebate}
-                          onChangeText={setRebate}
+                          onChangeText={(t) => setRebate(sanitizeSignedDecimalInput(t, 2, 6))}
+                          maxLength={9}
                           placeholder="-2.37"
                           placeholderTextColor={COLORS.textMuted}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                         />
                       </View>
                     </View>
@@ -1314,7 +1548,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                         id="input-edg-notes"
                         style={styles.edgNotesInput}
                         value={notes}
-                        onChangeText={setNotes}
+                        onChangeText={(t) => setNotes(t.slice(0, BILL_LIMITS.MAX_NOTES_LEN))}
+                        maxLength={BILL_LIMITS.MAX_NOTES_LEN}
                         placeholder="Meter remarks, tariff notes…"
                         placeholderTextColor={COLORS.textMuted}
                       />
@@ -1339,10 +1574,11 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                   <View style={styles.bankRight}>
                     <TextInput
                       id="input-opening-credit"
-                      style={styles.bankInput}
+                      style={[styles.bankInput, hasOpeningError && styles.inputError]}
                       value={openingCredit}
-                      onChangeText={setOpeningCredit}
-                      keyboardType="numeric"
+                      onChangeText={(t) => setOpeningCredit(sanitizeDecimalInput(t, 2, 6))}
+                      maxLength={9}
+                      keyboardType="decimal-pad"
                       placeholder="0"
                       placeholderTextColor={COLORS.textMuted}
                     />
@@ -1365,12 +1601,13 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     <View style={styles.inputBox}>
                       <TextInput
                         id="input-grid-import"
-                        style={styles.coreInput}
+                        style={[styles.coreInput, hasImportError && styles.inputError]}
                         value={importKwh}
-                        onChangeText={setImportKwh}
+                        onChangeText={(t) => setImportKwh(sanitizeDecimalInput(t, 2, 6))}
+                        maxLength={9}
                         placeholder="e.g. 240"
                         placeholderTextColor={COLORS.textMuted}
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
                       />
                       <Text style={styles.unitText}>kWh</Text>
                     </View>
@@ -1388,12 +1625,13 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     <View style={styles.inputBox}>
                       <TextInput
                         id="input-grid-export"
-                        style={styles.coreInput}
+                        style={[styles.coreInput, hasExportError && styles.inputError]}
                         value={exportKwh}
-                        onChangeText={setExportKwh}
+                        onChangeText={(t) => setExportKwh(sanitizeDecimalInput(t, 2, 6))}
+                        maxLength={9}
                         placeholder="e.g. 330"
                         placeholderTextColor={COLORS.textMuted}
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
                       />
                       <Text style={styles.unitText}>kWh</Text>
                     </View>
@@ -1416,12 +1654,13 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     <Text style={styles.rupeeSign}>₹</Text>
                     <TextInput
                       id="input-bill-amount"
-                      style={styles.amountInput}
+                      style={[styles.amountInput, hasAmountError && styles.inputError]}
                       value={billAmount}
-                      onChangeText={setBillAmount}
+                      onChangeText={(t) => setBillAmount(sanitizeDecimalInput(t, 2, 7))}
+                      maxLength={10}
                       placeholder="0.00"
                       placeholderTextColor={COLORS.textMuted}
-                      keyboardType="numeric"
+                      keyboardType="decimal-pad"
                     />
                   </View>
                 </View>
@@ -1438,12 +1677,13 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                   <View style={styles.optionalInputBox}>
                     <TextInput
                       id="input-solar-generation"
-                      style={styles.optionalInput}
+                      style={[styles.optionalInput, hasGenError && styles.inputError]}
                       value={generationKwh}
-                      onChangeText={setGenerationKwh}
+                      onChangeText={(t) => setGenerationKwh(sanitizeDecimalInput(t, 2, 6))}
+                      maxLength={9}
                       placeholder="e.g. 430"
                       placeholderTextColor={COLORS.textMuted}
-                      keyboardType="numeric"
+                      keyboardType="decimal-pad"
                     />
                     <Text style={styles.unitText}>kWh</Text>
                   </View>
@@ -1472,7 +1712,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       <Field
                         label="Bill Number"
                         value={billNumber}
-                        onChange={setBillNumber}
+                        onChange={(t) => setBillNumber(t.slice(0, BILL_LIMITS.MAX_BILL_NUM_LEN))}
+                        maxLength={BILL_LIMITS.MAX_BILL_NUM_LEN}
                         placeholder="17000216006"
                         style={{ flex: 1 }}
                       />
@@ -1489,17 +1730,19 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       <Field
                         label="Fixed/Demand (₹)"
                         value={demandCharges}
-                        onChange={setDemandCharges}
+                        onChange={(t) => setDemandCharges(sanitizeDecimalInput(t, 2, 6))}
+                        maxLength={9}
                         placeholder="223.46"
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
                         style={{ flex: 1 }}
                       />
                       <Field
                         label="FPPCA (₹)"
                         value={fppca}
-                        onChange={setFppca}
+                        onChange={(t) => setFppca(sanitizeDecimalInput(t, 2, 6))}
+                        maxLength={9}
                         placeholder="42.98"
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
                         style={{ flex: 1 }}
                       />
                     </View>
@@ -1508,17 +1751,20 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                       <Field
                         label="Rebate (₹)"
                         value={rebate}
-                        onChange={setRebate}
+                        onChange={(t) => setRebate(sanitizeSignedDecimalInput(t, 2, 6))}
+                        maxLength={9}
                         placeholder="-2.37"
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
                         style={{ flex: 1 }}
                       />
                       <Field
                         label="Custom Billing Days"
                         value={customDays}
-                        onChange={setCustomDays}
+                        onChange={(t) => setCustomDays(sanitizeIntegerInput(t, 3))}
+                        maxLength={3}
                         placeholder={String(derivedDates.daysInMonth)}
                         keyboardType="numeric"
+                        hasError={hasDaysError}
                         style={{ flex: 1 }}
                       />
                     </View>
@@ -1543,12 +1789,23 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     <Field
                       label="Notes (Optional)"
                       value={notes}
-                      onChange={setNotes}
+                      onChange={(t) => setNotes(t.slice(0, BILL_LIMITS.MAX_NOTES_LEN))}
+                      maxLength={BILL_LIMITS.MAX_NOTES_LEN}
                       placeholder="Meter remarks, tariff notes…"
                       multiline
                     />
                   </View>
                 )}
+              </View>
+            )}
+
+            {/* ── VALIDATION WARNING BANNER ── */}
+            {validationIssues.length > 0 && (
+              <View style={styles.validationWarningBar}>
+                <Ionicons name="alert-circle" size={16} color="#DC2626" />
+                <Text style={styles.validationWarningText}>
+                  {validationIssues[0].message}
+                </Text>
               </View>
             )}
 
@@ -1563,21 +1820,21 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                 <View style={styles.liveCol}>
                   <Text style={styles.liveColLabel}>Net Billed Units</Text>
                   <Text style={[styles.liveColValue, { color: COLORS.import }]}>
-                    {liveCalc.netBilledImportKwh} kWh
+                    {Number(liveCalc.netBilledImportKwh).toLocaleString('en-IN')} kWh
                   </Text>
                 </View>
 
                 <View style={styles.liveCol}>
                   <Text style={styles.liveColLabel}>Credit Offset</Text>
                   <Text style={[styles.liveColValue, { color: COLORS.export }]}>
-                    {liveCalc.adjustedCreditKwh} kWh
+                    {Number(liveCalc.adjustedCreditKwh).toLocaleString('en-IN')} kWh
                   </Text>
                 </View>
 
                 <View style={styles.liveCol}>
                   <Text style={styles.liveColLabel}>Bank Closing</Text>
                   <Text style={[styles.liveColValue, { color: COLORS.gold, fontWeight: FONT.bold }]}>
-                    {liveCalc.closingCreditKwh} kWh
+                    {Number(liveCalc.closingCreditKwh).toLocaleString('en-IN')} kWh
                   </Text>
                 </View>
               </View>
@@ -1650,8 +1907,10 @@ interface FieldProps {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
-  keyboardType?: 'numeric' | 'default';
+  keyboardType?: 'numeric' | 'default' | 'decimal-pad';
   multiline?: boolean;
+  maxLength?: number;
+  hasError?: boolean;
   style?: object;
 }
 
@@ -1662,18 +1921,25 @@ const Field: React.FC<FieldProps> = ({
   placeholder,
   keyboardType = 'default',
   multiline,
+  maxLength,
+  hasError,
   style,
 }) => (
   <View style={[{ marginBottom: SPACING.sm }, style]}>
     <Text style={styles.fieldLabel}>{label}</Text>
     <TextInput
-      style={[styles.input, multiline && { height: 60, textAlignVertical: 'top' }]}
+      style={[
+        styles.input,
+        multiline && { height: 60, textAlignVertical: 'top' },
+        hasError && styles.inputError,
+      ]}
       value={value}
       onChangeText={onChange}
       placeholder={placeholder}
       placeholderTextColor={COLORS.textMuted}
       keyboardType={keyboardType}
       multiline={multiline}
+      maxLength={maxLength}
     />
   </View>
 );
@@ -2214,6 +2480,28 @@ const styles = StyleSheet.create({
   footerBtns: {
     flexDirection: 'row',
     gap: SPACING.sm,
+  },
+  inputError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  validationWarningBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: RADIUS.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: SPACING.sm,
+  },
+  validationWarningText: {
+    fontSize: 12,
+    color: '#DC2626',
+    fontWeight: FONT.semi,
+    flex: 1,
   },
   saveErrorBar: {
     flexDirection: 'row',
