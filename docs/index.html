@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Goa SolarTrack</title>
+  <meta name="description" content="Privacy Policy for Goa SolarTrack Android application (com.prashiln79.goasolartrack), developed by Prashil Wadkar." />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary: #EA580C;
+      --primary-dark: #C2410C;
+      --primary-light: #FFEDD5;
+      --accent: #2563EB;
+      --accent-light: #EFF6FF;
+      --success: #16A34A;
+      --success-light: #DCFCE7;
+      --text-main: #0F172A;
+      --text-muted: #475569;
+      --text-subtle: #64748B;
+      --bg-body: #F8FAFC;
+      --bg-card: #FFFFFF;
+      --border-color: #E2E8F0;
+      --border-focus: #CBD5E1;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 60px;
+    }
+
+    /* Top Navigation Bar */
+    .navbar {
+      background: #FFFFFF;
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(8px);
+      background-color: rgba(255, 255, 255, 0.95);
+    }
+
+    .nav-container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-main);
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-main);
+      letter-spacing: -0.02em;
+    }
+
+    .brand-badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background-color: var(--primary-light);
+      color: var(--primary-dark);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Hero Section */
+    .hero {
+      background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+      border-bottom: 1px solid var(--border-color);
+      padding: 48px 20px 40px;
+      text-align: center;
+    }
+
+    .hero-container {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background-color: var(--accent-light);
+      color: var(--accent);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .hero-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 2.25rem;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+    }
+
+    .hero-subtitle {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .hero-meta {
+      font-size: 0.85rem;
+      color: var(--text-subtle);
+    }
+
+    /* Main Container */
+    .main-container {
+      max-width: 960px;
+      margin: 32px auto 0;
+      padding: 0 20px;
+    }
+
+    /* Google Play Verification Card */
+    .verification-card {
+      background: #FFFFFF;
+      border: 2px solid #FDBA74;
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .verification-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 5px;
+      background: linear-gradient(90deg, #EA580C 0%, #F59E0B 100%);
+    }
+
+    .verification-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .verification-badge {
+      background-color: var(--success-light);
+      color: var(--success);
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .verification-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .verification-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-top: 14px;
+    }
+
+    .v-item {
+      background: #FFF7ED;
+      border: 1px solid #FED7AA;
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+    }
+
+    .v-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--primary-dark);
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+
+    .v-value {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-main);
+      word-break: break-all;
+    }
+
+    .v-value code {
+      background: #FFFFFF;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.88rem;
+      color: var(--primary-dark);
+      border: 1px solid #FDBA74;
+    }
+
+    /* Content Card */
+    .content-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 36px 40px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    @media (max-width: 640px) {
+      .content-card {
+        padding: 24px 20px;
+      }
+      .hero-title {
+        font-size: 1.75rem;
+      }
+    }
+
+    /* Typography inside Content */
+    h2 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-main);
+      letter-spacing: -0.02em;
+      margin-top: 36px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #F1F5F9;
+      padding-bottom: 8px;
+    }
+
+    h2:first-of-type {
+      margin-top: 0;
+    }
+
+    h3 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    p {
+      margin-bottom: 14px;
+      color: var(--text-muted);
+      font-size: 0.98rem;
+    }
+
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 24px;
+      color: var(--text-muted);
+    }
+
+    li {
+      margin-bottom: 8px;
+      font-size: 0.98rem;
+    }
+
+    li strong {
+      color: var(--text-main);
+    }
+
+    .callout-box {
+      background-color: #F8FAFC;
+      border-left: 4px solid var(--accent);
+      padding: 16px 18px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      margin: 20px 0;
+      font-size: 0.94rem;
+      color: var(--text-muted);
+    }
+
+    .callout-box strong {
+      color: var(--text-main);
+    }
+
+    .security-badge-box {
+      background-color: #ECFDF5;
+      border: 1px solid #A7F3D0;
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      margin: 24px 0;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .security-badge-box svg {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin: 20px 0;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.92rem;
+    }
+
+    th {
+      background-color: #F8FAFC;
+      padding: 12px 16px;
+      font-weight: 600;
+      color: var(--text-main);
+      border-bottom: 1px solid var(--border-color);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-muted);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    a:hover {
+      color: var(--primary-dark);
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 48px;
+      text-align: center;
+      color: var(--text-subtle);
+      font-size: 0.85rem;
+    }
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="./" class="brand">
+        <img src="icon.png" alt="Goa SolarTrack Icon" class="brand-icon" />
+        <span class="brand-title">Goa SolarTrack</span>
+      </a>
+      <span class="brand-badge">Official Policy</span>
+    </div>
+  </header>
+
+  <!-- Hero Header -->
+  <section class="hero">
+    <div class="hero-container">
+      <div class="hero-tag">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Google Play Store Compliant
+      </div>
+      <h1 class="hero-title">Privacy Policy</h1>
+      <p class="hero-subtitle">
+        Transparent guidelines on how Goa SolarTrack handles and protects your solar and billing data.
+      </p>
+      <div class="hero-meta">
+        <strong>Effective Date:</strong> November 2, 2026 &nbsp;|&nbsp; <strong>Last Updated:</strong> November 2, 2026
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content -->
+  <main class="main-container">
+
+    <!-- Store & Developer Matching Identifier Card (Specifically resolving Google Play Console validation) -->
+    <div class="verification-card">
+      <div class="verification-header">
+        <div class="verification-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Store Listing Verification Details
+        </div>
+      </div>
+      <p style="font-size: 0.95rem; color: #7C2D12; margin-bottom: 12px; font-weight: 500;">
+        This privacy policy strictly identifies and governs the Google Play Store application listing below:
+      </p>
+
+      <div class="verification-grid">
+        <div class="v-item">
+          <div class="v-label">Application Name</div>
+          <div class="v-value">Goa SolarTrack</div>
+        </div>
+        <div class="v-item">
+          <div class="v-label">Android Package Name (Application ID)</div>
+          <div class="v-value"><code>com.prashiln79.goasolartrack</code></div>
+        </div>
+        <div class="v-item">
+          <div class="v-label">Developer / Publisher Name</div>
+          <div class="v-value">Prashil Wadkar</div>
+        </div>
+        <div class="v-item">
+          <div class="v-label">Developer Contact Email</div>
+          <div class="v-value"><a href="mailto:prashiln79@gmail.com" style="text-decoration:none;">prashiln79@gmail.com</a></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Policy Document -->
+    <article class="content-card">
+
+      <h2>1. Introduction & Overview</h2>
+      <p>
+        Welcome to <strong>Goa SolarTrack</strong> (&ldquo;we&rdquo;, &ldquo;our&rdquo;, or &ldquo;the App&rdquo;), developed and operated by <strong>Prashil Wadkar</strong> (&ldquo;Developer&rdquo;). Goa SolarTrack is a specialized Android utility designed to help rooftop solar prosumers in Goa track their solar power generation, verify solar net-metered electricity bills from the Goa Electricity Department (GED), compute banked energy reserves in compliance with Joint Electricity Regulatory Commission (JERC) regulations, and receive solar panel maintenance reminders.
+      </p>
+      <p>
+        We are deeply committed to protecting your privacy. This document outlines what information is collected, how it is used, where it is stored, and the rights you possess regarding your personal data.
+      </p>
+
+      <h2>2. Information We Collect and Process</h2>
+      <p>
+        Goa SolarTrack is designed with a <strong>local-first architecture</strong>, meaning your data remains on your physical device and is only synchronized to secure cloud infrastructure if you choose to enable cloud backup. We collect and process the following categories of data:
+      </p>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Data Type</th>
+              <th>Specific Details</th>
+              <th>Purpose & Usage</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Consumer Identifier</strong></td>
+              <td>11-digit Electricity Consumer Number (e.g. <code>600xxxxxxxx</code>)</td>
+              <td>Uniquely separates and links your rooftop solar plant profile, ledger entries, and monthly billing calculations.</td>
+            </tr>
+            <tr>
+              <td><strong>Solar System Profile</strong></td>
+              <td>System capacity (kW), installation date, panel count, inverter specifications, location, tariff category</td>
+              <td>Used to accurately calculate solar generation potential, monetary savings, and payback analytics.</td>
+            </tr>
+            <tr>
+              <td><strong>Monthly Electricity Bill Records</strong></td>
+              <td>Meter reading dates, solar units generated (kWh), units exported, units imported, net billing amounts, and banked energy balances</td>
+              <td>Calculates your monthly electricity balance, verifies net-metering accuracy, and models savings.</td>
+            </tr>
+            <tr>
+              <td><strong>Electricity Bill PDF Documents</strong></td>
+              <td>Official electricity bill PDFs selected by the user via the system document picker</td>
+              <td><strong>Processed 100% locally on your device</strong> using a local in-memory PDF parsing engine to extract billing numbers. Selected PDF files are never uploaded or transmitted to any third-party server.</td>
+            </tr>
+            <tr>
+              <td><strong>Maintenance & Care Logs</strong></td>
+              <td>Dates and records of solar panel cleanings and inspections</td>
+              <td>Provides reminders to maintain peak solar panel efficiency.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout-box">
+        <strong>Important:</strong> We do NOT collect sensitive personal information such as government national IDs, passwords, bank account details, or payment card numbers.
+      </div>
+
+      <h2>3. Device Permissions & Usage</h2>
+      <p>Goa SolarTrack requests only the minimal device permissions necessary to perform its functions:</p>
+      <ul>
+        <li>
+          <strong>File & Document Access (Scoped Document Picker):</strong> Used solely when you voluntarily tap to upload an electricity bill PDF. We use the standard Android system file picker (Storage Access Framework) to read the selected file in memory. The app does not access your personal photo gallery or unrelated device storage.
+        </li>
+        <li>
+          <strong>Notifications:</strong> Used to deliver optional local notifications for meter reading due dates, bill receipt reminders, and panel cleaning schedules. You can toggle reminders on or off at any time in the app&rsquo;s Settings.
+        </li>
+        <li>
+          <strong>Network Access:</strong> Required to establish cloud synchronization with Google Firebase Firestore and check for application updates.
+        </li>
+      </ul>
+
+      <h2>4. Third-Party Services & Cloud Infrastructure</h2>
+      <p>
+        The app utilizes trusted, industry-standard third-party service providers solely to maintain reliable infrastructure:
+      </p>
+      <ul>
+        <li>
+          <strong>Google Firebase (Cloud Firestore &mdash; Google LLC):</strong>
+          Used to store encrypted user records for cross-device synchronization and data restoration. Data stored in Firestore is associated only with your consumer identifier. 
+          <br>
+          <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a> &bull; 
+          <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">Firebase Privacy and Security Details</a>
+        </li>
+        <li>
+          <strong>Expo & EAS (650 Industries, Inc.):</strong>
+          Used as the application development and notification delivery framework.
+          <br>
+          <a href="https://expo.dev/privacy" target="_blank" rel="noopener">Expo Privacy Policy</a>
+        </li>
+      </ul>
+      <p>
+        <strong>Zero Third-Party Advertising:</strong> Goa SolarTrack does not integrate any advertising SDKs (such as Google AdMob, Unity, or AppLovin), does not run analytics trackers, and does not track users across other apps or websites.
+      </p>
+
+      <h2>5. Data Sharing and Sale</h2>
+      <div class="security-badge-box">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+        <div>
+          <strong style="color: #065F46; font-size: 1rem; display: block; margin-bottom: 4px;">Strict No-Sale Policy</strong>
+          <span style="color: #047857; font-size: 0.92rem;">
+            We do NOT sell, rent, lease, or trade your personal or solar data to third-party data brokers, marketers, advertisers, or energy aggregators under any circumstances.
+          </span>
+        </div>
+      </div>
+
+      <h2>6. Data Security</h2>
+      <p>We implement standard, modern security measures to safeguard your information:</p>
+      <ul>
+        <li><strong>Encryption in Transit:</strong> All communications between the app and cloud services are encrypted using Transport Layer Security (TLS/HTTPS).</li>
+        <li><strong>On-Device Isolation:</strong> Data stored locally on your Android device resides within private, sandboxed app storage, inaccessible to other third-party apps without root access.</li>
+        <li><strong>Cloud Rules:</strong> Firestore database security rules enforce boundaries so records are partitioned by consumer identity.</li>
+      </ul>
+
+      <h2>7. User Data Retention & Deletion Instructions</h2>
+      <p>
+        In strict compliance with Google Play&rsquo;s User Data policy regarding account and data deletion:
+      </p>
+      <ol>
+        <li>
+          <strong>Local Data Deletion:</strong> You can completely erase all data stored on your device at any time by going to your Android device&rsquo;s <em>Settings &rarr; Apps &rarr; Goa SolarTrack &rarr; Storage &rarr; Clear Data</em>, or by tapping <em>Switch Account / Clear</em> within the app.
+        </li>
+        <li>
+          <strong>Cloud Data Deletion Request:</strong> If you wish to permanently delete all records associated with your electricity consumer number from our Google Firebase cloud database, simply email developer <strong>Prashil Wadkar</strong> at <a href="mailto:prashiln79@gmail.com?subject=Data%20Deletion%20Request%20-%20Goa%20SolarTrack">prashiln79@gmail.com</a> with the subject line <em>&ldquo;Data Deletion Request - Goa SolarTrack&rdquo;</em> and include your Consumer Number. Your cloud data will be permanently purged within 7 business days, and confirmation will be sent to you.
+        </li>
+      </ol>
+
+      <h2>8. Children&rsquo;s Privacy</h2>
+      <p>
+        Goa SolarTrack is a solar and utility utility intended for adults and rooftop property owners. It is not targeted towards or designed for children under the age of 13. We do not knowingly collect or solicit personal information from children under 13.
+      </p>
+
+      <h2>9. Changes to This Privacy Policy</h2>
+      <p>
+        We may update our Privacy Policy periodically to reflect changes in our services, technological advancements, or regulatory requirements. Any modifications will be posted directly to this web page with an updated &ldquo;Last Updated&rdquo; date. We encourage you to review this page periodically.
+      </p>
+
+      <h2>10. Developer Contact & Legal Entity Details</h2>
+      <p>
+        If you have any questions, feedback, or concerns regarding this Privacy Policy or your data, please contact the developer directly:
+      </p>
+      <div style="background:#F8FAFC; border:1px solid var(--border-color); border-radius:var(--radius-md); padding:18px 20px; margin-top:14px;">
+        <p style="margin-bottom:6px;"><strong>Application:</strong> Goa SolarTrack (<code>com.prashiln79.goasolartrack</code>)</p>
+        <p style="margin-bottom:6px;"><strong>Developer:</strong> Prashil Wadkar</p>
+        <p style="margin-bottom:6px;"><strong>Email:</strong> <a href="mailto:prashiln79@gmail.com">prashiln79@gmail.com</a></p>
+        <p style="margin-bottom:6px;"><strong>Location:</strong> Goa, India</p>
+        <p style="margin-bottom:0;"><strong>Repository:</strong> <a href="https://github.com/prashiln79/Goa-SolarTrack" target="_blank" rel="noopener">https://github.com/prashiln79/Goa-SolarTrack</a></p>
+      </div>
+
+    </article>
+
+    <!-- Footer -->
+    <footer>
+      <div class="footer-links">
+        <a href="mailto:prashiln79@gmail.com">Contact Developer</a>
+        &bull;
+        <a href="https://github.com/prashiln79/Goa-SolarTrack" target="_blank" rel="noopener">GitHub Project</a>
+      </div>
+      <p>&copy; 2026 Prashil Wadkar. All rights reserved. Goa SolarTrack.</p>
+    </footer>
+
+  </main>
+
+</body>
+</html>

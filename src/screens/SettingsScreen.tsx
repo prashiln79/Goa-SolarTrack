@@ -15,6 +15,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Switch,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -751,44 +752,62 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {/* Verified Identifiers matching Google Play listing */}
+              <View style={[styles.sheetSectionCard, { borderColor: '#FED7AA', backgroundColor: '#FFF7ED' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                  <Ionicons name="shield-checkmark" size={18} color="#EA580C" style={{ marginRight: 6 }} />
+                  <Text style={[styles.privacyHeading, { color: '#C2410C', marginBottom: 0 }]}>
+                    Verified App & Developer
+                  </Text>
+                </View>
+                <Text style={[styles.privacyBody, { color: '#7C2D12', marginBottom: 4 }]}>
+                  <Text style={{ fontWeight: '700' }}>App Name:</Text> Goa SolarTrack
+                </Text>
+                <Text style={[styles.privacyBody, { color: '#7C2D12', marginBottom: 4 }]}>
+                  <Text style={{ fontWeight: '700' }}>Package ID:</Text> com.prashiln79.goasolartrack
+                </Text>
+                <Text style={[styles.privacyBody, { color: '#7C2D12', marginBottom: 4 }]}>
+                  <Text style={{ fontWeight: '700' }}>Developer:</Text> Prashil Wadkar
+                </Text>
+                <Text style={[styles.privacyBody, { color: '#7C2D12' }]}>
+                  <Text style={{ fontWeight: '700' }}>Contact:</Text> prashiln79@gmail.com
+                </Text>
+              </View>
+
               <View style={styles.sheetSectionCard}>
                 <Text style={styles.privacyHeading}>Local-First Storage</Text>
                 <Text style={styles.privacyBody}>
-                  All your electricity bills, solar generations, and care logs are stored directly on your phone in encrypted SQLite / AsyncStorage, with cloud synchronization to Firebase when online.
+                  All your electricity bills, solar generations, and care logs are stored directly on your phone in secure local storage, with optional cloud synchronization to Google Firebase Firestore when online.
                 </Text>
               </View>
-{/* 
-              <Text style={styles.sectionHeading}>Diagnostic & Developer Tools</Text> */}
 
-              {/* <TouchableOpacity
-                style={styles.toolBtn}
-                onPress={handleTestConnection}
-                disabled={isTestingConn}
+              <View style={styles.sheetSectionCard}>
+                <Text style={styles.privacyHeading}>On-Device PDF Processing</Text>
+                <Text style={styles.privacyBody}>
+                  Electricity bill PDFs selected via the system document picker are parsed locally in memory on your device. Selected document files are never uploaded or shared with any third party.
+                </Text>
+              </View>
+
+              <View style={styles.sheetSectionCard}>
+                <Text style={styles.privacyHeading}>Data Deletion & Rights</Text>
+                <Text style={styles.privacyBody}>
+                  To clear local data, use Android Settings &gt; Clear Storage or switch accounts in-app. To request permanent deletion of cloud records, email prashiln79@gmail.com with your Consumer ID.
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.toolBtn, { borderColor: '#EA580C', backgroundColor: '#FFF7ED', marginTop: 4 }]}
+                onPress={() => Linking.openURL('https://prashiln79.github.io/Goa-SolarTrack/privacy-policy.html')}
               >
-                <Ionicons name="cloud-done-outline" size={18} color="#2563EB" />
+                <Ionicons name="open-outline" size={18} color="#EA580C" />
                 <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.toolBtnTitle}>
-                    {isTestingConn ? 'Pinging Cloud Server…' : 'Test Cloud Connection'}
+                  <Text style={[styles.toolBtnTitle, { color: '#C2410C' }]}>
+                    Open Official Privacy Policy (Web)
                   </Text>
-                  <Text style={styles.toolBtnSub}>Verify Firestore remote server reachability</Text>
+                  <Text style={styles.toolBtnSub}>View full public Google Play policy document</Text>
                 </View>
+                <Ionicons name="chevron-forward" size={16} color="#EA580C" />
               </TouchableOpacity>
-
-              <TouchableOpacity style={styles.toolBtn} onPress={handleSeedCanonical}>
-                <Ionicons name="sparkles-outline" size={18} color="#D97706" />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.toolBtnTitle}>Load PRD §15.2 Test Fixture</Text>
-                  <Text style={styles.toolBtnSub}>Load August 2026 canonical net metering bill</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.toolBtn} onPress={handleRunVerification}>
-                <Ionicons name="checkmark-circle-outline" size={18} color="#16A34A" />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.toolBtnTitle}>Run Domain Verification Tests</Text>
-                  <Text style={styles.toolBtnSub}>Verify energy ledger and edge case math</Text>
-                </View>
-              </TouchableOpacity> */}
             </ScrollView>
 
             <View style={[styles.modalFooter, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
@@ -894,10 +913,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <Ionicons name="sunny" size={32} color="#EA580C" />
                 </View>
                 <Text style={styles.aboutAppName}>Goa SolarTrack</Text>
-                <Text style={styles.aboutAppVersion}>Version 1.0.0 (Build 2026)</Text>
-                <Text style={styles.aboutAppDesc}>
-                  Tailored specifically for rooftop solar producers in Goa under the Goa Electricity Department & JERC Net Metering framework.
+                <Text style={styles.aboutAppVersion}>Version 2.0.3 (Build 23)</Text>
+                <Text style={[styles.aboutAppDesc, { marginBottom: 6 }]}>
+                  Package: com.prashiln79.goasolartrack
                 </Text>
+                <Text style={[styles.aboutAppDesc, { marginBottom: 14 }]}>
+                  Developed by Prashil Wadkar (prashiln79@gmail.com). Tailored specifically for rooftop solar producers in Goa under the Goa Electricity Department & JERC Net Metering framework.
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.toolBtn, { width: '100%', marginTop: 4 }]}
+                  onPress={() => Linking.openURL('https://prashiln79.github.io/Goa-SolarTrack/privacy-policy.html')}
+                >
+                  <Ionicons name="shield-checkmark-outline" size={18} color="#2563EB" />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.toolBtnTitle}>Privacy Policy</Text>
+                    <Text style={styles.toolBtnSub}>prashiln79.github.io/Goa-SolarTrack</Text>
+                  </View>
+                  <Ionicons name="open-outline" size={16} color="#64748B" />
+                </TouchableOpacity>
               </View>
             </ScrollView>
 
