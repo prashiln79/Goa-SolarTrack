@@ -521,12 +521,19 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   // ── Save action ──
   const handleSave = async () => {
     const imp = parseNum(importKwh);
-    const exp = parseNum(exportKwh);
+    // Grid Export: default to 0 if blank (e.g. standard domestic or zero-export consumer bills)
+    const exp = parseNum(exportKwh) ?? (exportKwh.trim() === '' ? 0 : null);
     const amount = parseNum(billAmount);
     setSaveError(null);
 
     if (imp === null || exp === null || amount === null) {
-      setSaveError('Please enter Grid Import (kWh), Grid Export (kWh), and Bill Amount (₹).');
+      const missing: string[] = [];
+      if (imp === null) missing.push('Grid Import (kWh)');
+      if (amount === null) missing.push('Bill Amount (₹)');
+      if (exp === null) missing.push('Grid Export (kWh)');
+      const msg = `Please enter: ${missing.join(', ')}`;
+      setSaveError(msg);
+      Alert.alert('Missing Required Information', `${msg}\n\nThese fields are needed to calculate your energy balance.`);
       return;
     }
 
@@ -585,7 +592,9 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
         onClose();
       } catch (e: any) {
         setIsSubmitting(false);
-        setSaveError(e?.message ?? 'Save failed — please try again.');
+        const errText = e?.message ?? 'Save failed — please try again.';
+        setSaveError(errText);
+        Alert.alert('Save Failed', errText);
       }
     };
 

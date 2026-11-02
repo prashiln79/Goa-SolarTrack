@@ -70,6 +70,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 	// Scope toggle: "month" (latest billing period) vs "year" (all bills aggregated)
 	const [flowScope, setFlowScope] = useState<"month" | "year">("month");
 	const [selectedBarBillId, setSelectedBarBillId] = useState<string | null>(null);
+	const [selectedDistSegment, setSelectedDistSegment] = useState<"home" | "banked" | null>(null);
 
 	// ── Subtle Mascot Floating Idle Animation ──
 	const [floatAnim] = useState(() => new Animated.Value(0));
@@ -459,40 +460,80 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 					)}
 				</View>
 
-				{/* Simple Horizontal Distribution Bar */}
+				{/* Simple Horizontal Distribution Bar — Interactive */}
 				<View style={styles.distTrack}>
 					{/* Green Segment: Total Household Consumption */}
-					<View
+					<TouchableOpacity
+						id="btn-dist-seg-home"
+						activeOpacity={0.8}
+						onPress={() =>
+							setSelectedDistSegment((prev) => (prev === "home" ? null : "home"))
+						}
 						style={[
 							styles.distSegmentHome,
 							{ flex: Math.max(0.08, homeSharePct) },
+							selectedDistSegment === "banked" && styles.distSegmentDimmed,
+							selectedDistSegment === "home" && styles.distSegmentHomeActive,
 						]}
 					>
-						{homeSharePct >= 18 && (
-							<Text style={styles.distBarPctText}>{`${homeSharePct}%`}</Text>
-						)}
-					</View>
+						{homeSharePct >= 18 ? (
+							<View style={styles.distBarContent}>
+								<Ionicons name="home" size={11} color="#FFFFFF" />
+								<Text style={styles.distBarPctText}>{`${homeSharePct}%`}</Text>
+							</View>
+						) : homeSharePct >= 10 ? (
+							<Ionicons name="home" size={11} color="#FFFFFF" />
+						) : null}
+					</TouchableOpacity>
 
 					{/* Blue Segment: Banked Units */}
-					<View
+					<TouchableOpacity
+						id="btn-dist-seg-banked"
+						activeOpacity={0.8}
+						onPress={() =>
+							setSelectedDistSegment((prev) => (prev === "banked" ? null : "banked"))
+						}
 						style={[
 							styles.distSegmentExport,
 							{ flex: Math.max(activeBanked > 0 ? 0.08 : 0, bankedSharePct) },
+							selectedDistSegment === "home" && styles.distSegmentDimmed,
+							selectedDistSegment === "banked" && styles.distSegmentExportActive,
 						]}
 					>
-						{bankedSharePct >= 18 && (
-							<Text style={styles.distBarPctText}>{`${bankedSharePct}%`}</Text>
-						)}
-					</View>
+						{bankedSharePct >= 18 ? (
+							<View style={styles.distBarContent}>
+								<Ionicons name="grid" size={10} color="#FFFFFF" />
+								<Text style={styles.distBarPctText}>{`${bankedSharePct}%`}</Text>
+							</View>
+						) : bankedSharePct >= 10 ? (
+							<Ionicons name="grid" size={10} color="#FFFFFF" />
+						) : null}
+					</TouchableOpacity>
 				</View>
 
-				{/* Two Clearly Labelled Metric Boxes */}
+				{/* Two Clearly Labelled Metric Boxes — Interactive & Highlightable */}
 				<View style={styles.distBoxesRow}>
 					{/* Box 1: Total Household Consumption */}
-					<View style={styles.distBoxHome}>
+					<TouchableOpacity
+						id="btn-dist-card-home"
+						activeOpacity={0.8}
+						onPress={() =>
+							setSelectedDistSegment((prev) => (prev === "home" ? null : "home"))
+						}
+						style={[
+							styles.distBoxHome,
+							selectedDistSegment === "home" && styles.distBoxHomeActive,
+							selectedDistSegment === "banked" && styles.distBoxDimmed,
+						]}
+					>
 						<View style={styles.distBoxHeader}>
-							<View style={styles.distDotHome} />
+							<Ionicons name="home" size={13} color="#059669" />
 							<Text style={styles.distBoxLabel}>Home consumed</Text>
+							{selectedDistSegment === "home" && (
+								<View style={styles.activeCheckPillHome}>
+									<Ionicons name="checkmark" size={10} color="#059669" />
+								</View>
+							)}
 						</View>
 						<View style={styles.distBoxValRow}>
 							<Text style={styles.distBoxVal}>
@@ -502,13 +543,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 							<Text style={styles.distBoxShareHome}>{`${homeSharePct}%`}</Text>
 						</View>
 						<Text style={styles.distBoxSubtext}>Total home electricity</Text>
-					</View>
+					</TouchableOpacity>
 
 					{/* Box 2: Banked Units Only */}
-					<View style={styles.distBoxExport}>
+					<TouchableOpacity
+						id="btn-dist-card-banked"
+						activeOpacity={0.8}
+						onPress={() =>
+							setSelectedDistSegment((prev) => (prev === "banked" ? null : "banked"))
+						}
+						style={[
+							styles.distBoxExport,
+							selectedDistSegment === "banked" && styles.distBoxExportActive,
+							selectedDistSegment === "home" && styles.distBoxDimmed,
+						]}
+					>
 						<View style={styles.distBoxHeader}>
-							<View style={styles.distDotExport} />
+							<Ionicons name="grid-outline" size={13} color="#2563EB" />
 							<Text style={styles.distBoxLabel}>Banked units</Text>
+							{selectedDistSegment === "banked" && (
+								<View style={styles.activeCheckPillBanked}>
+									<Ionicons name="checkmark" size={10} color="#2563EB" />
+								</View>
+							)}
 						</View>
 						<View style={styles.distBoxValRow}>
 							<Text style={styles.distBoxVal}>
@@ -524,7 +581,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 								? `Total reserve: ${Math.round(latestBill.closingCreditKwh)} kWh`
 								: "No banked reserve"}
 						</Text>
-					</View>
+					</TouchableOpacity>
 				</View>
 
 				{/* Callout Banner: Solar coverage of home electricity */}
@@ -536,7 +593,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 				>
 					<Ionicons name="leaf" size={17} color="#10B981" />
 					<Text style={styles.distCalloutText}>
-						{"Solar covered "}
+						{"Direct solar consumption covered "}
 						<Text style={styles.distCalloutBold}>{`${selfSufficiencyPct}%`}</Text>
 						{" of your home’s total electricity use."}
 					</Text>
@@ -988,6 +1045,12 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 		alignItems: "center",
 	},
+	distBarContent: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "center",
+		gap: 3,
+	},
 	distBarPctText: {
 		fontSize: 11,
 		fontWeight: FONT.bold,
@@ -1003,16 +1066,56 @@ const styles = StyleSheet.create({
 		backgroundColor: "#F0FDF4",
 		borderRadius: 14,
 		padding: 11,
-		borderWidth: 1,
+		borderWidth: 1.5,
 		borderColor: "#DCFCE7",
+	},
+	distBoxHomeActive: {
+		borderColor: "#059669",
+		borderWidth: 2,
+		backgroundColor: "#ECFDF5",
+		...SHADOW.card,
+		transform: [{ scale: 1.02 }],
 	},
 	distBoxExport: {
 		flex: 1,
 		backgroundColor: "#EFF6FF",
 		borderRadius: 14,
 		padding: 11,
-		borderWidth: 1,
+		borderWidth: 1.5,
 		borderColor: "#DBEAFE",
+	},
+	distBoxExportActive: {
+		borderColor: "#2563EB",
+		borderWidth: 2,
+		backgroundColor: "#EFF6FF",
+		...SHADOW.card,
+		transform: [{ scale: 1.02 }],
+	},
+	distBoxDimmed: {
+		opacity: 0.5,
+	},
+	distSegmentHomeActive: {
+		backgroundColor: "#059669",
+	},
+	distSegmentExportActive: {
+		backgroundColor: "#2563EB",
+	},
+	distSegmentDimmed: {
+		opacity: 0.35,
+	},
+	activeCheckPillHome: {
+		marginLeft: "auto",
+		backgroundColor: "#DCFCE7",
+		borderRadius: 10,
+		paddingHorizontal: 5,
+		paddingVertical: 2,
+	},
+	activeCheckPillBanked: {
+		marginLeft: "auto",
+		backgroundColor: "#DBEAFE",
+		borderRadius: 10,
+		paddingHorizontal: 5,
+		paddingVertical: 2,
 	},
 	distBoxHeader: {
 		flexDirection: "row",

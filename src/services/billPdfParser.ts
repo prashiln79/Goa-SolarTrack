@@ -80,38 +80,43 @@ export function deriveBillingPeriod(
     };
   }
 
-  // If reading ends on the 1st through 7th of a month (e.g., 01.09.2026 after 01.08.2026),
-  // the meter reader was recording closing units for the prior month.
-  // The billed period is the START month (August).
+  const startDate = new Date(startYear, startMonth - 1, startDay);
+  const endDate = new Date(endYear, endMonth - 1, endDay);
+
+  // If reading ends on the 1st through 7th of a month, the reading is closing units for the prior month
+  let effectiveEnd = new Date(endDate);
   if (endDay <= 7) {
-    const mIdx = startMonth - 1;
-    return {
-      periodMonth: mIdx,
-      periodYear: startYear,
-      periodLabel: `${MONTH_NAMES[mIdx]} ${startYear}`,
-    };
+    effectiveEnd = new Date(endYear, endMonth - 1, 0); // last day of prior month
   }
 
-  // Otherwise calculate which month has the majority of days
-  const daysInStartMonth = new Date(startYear, startMonth, 0).getDate();
-  const daysInStart = Math.max(1, daysInStartMonth - startDay + 1);
-  const daysInEnd = Math.max(1, endDay);
+  // Count days falling into each year-month
+  const monthDays: Record<string, { month: number; year: number; days: number }> = {};
+  const cur = new Date(startDate);
+  const finish = effectiveEnd < startDate ? endDate : effectiveEnd;
 
-  if (daysInStart >= daysInEnd) {
-    const mIdx = startMonth - 1;
-    return {
-      periodMonth: mIdx,
-      periodYear: startYear,
-      periodLabel: `${MONTH_NAMES[mIdx]} ${startYear}`,
-    };
-  } else {
-    const mIdx = endMonth - 1;
-    return {
-      periodMonth: mIdx,
-      periodYear: endYear,
-      periodLabel: `${MONTH_NAMES[mIdx]} ${endYear}`,
-    };
+  while (cur <= finish) {
+    const y = cur.getFullYear();
+    const m = cur.getMonth(); // 0-11
+    const key = `${y}-${m}`;
+    if (!monthDays[key]) {
+      monthDays[key] = { month: m, year: y, days: 0 };
+    }
+    monthDays[key].days++;
+    cur.setDate(cur.getDate() + 1);
   }
+
+  let best = { month: startMonth - 1, year: startYear, days: 0 };
+  for (const item of Object.values(monthDays)) {
+    if (item.days > best.days) {
+      best = item;
+    }
+  }
+
+  return {
+    periodMonth: best.month,
+    periodYear: best.year,
+    periodLabel: `${MONTH_NAMES[best.month]} ${best.year}`,
+  };
 }
 
 /**
@@ -187,6 +192,43 @@ export function decodeHexString(hex: string): string {
   }
 }
 
+function decodePdfHex(
+  hex: string,
+  masterCMap: Record<number, string>,
+  hasCMap: boolean
+): string {
+  if (!hex) return '';
+  // If font uses a 2-byte CMap (e.g. Type0/CIDFont from Microsoft Print to PDF)
+  if (hasCMap && hex.length % 4 === 0) {
+    let matchedCMapCount = 0;
+    let tempWord = '';
+    for (let i = 0; i < hex.length; i += 4) {
+      const code = parseInt(hex.slice(i, i + 4), 16);
+      if (masterCMap[code] !== undefined) {
+        tempWord += masterCMap[code];
+        matchedCMapCount++;
+      } else if (code >= 32 && code <= 126) {
+        tempWord += String.fromCharCode(code);
+      }
+    }
+    if (matchedCMapCount > 0) {
+      return tempWord;
+    }
+  }
+
+  // Standard 1-byte encoding (Type 1 fonts e.g. SAP NetWeaver official EDG bills)
+  let word = '';
+  for (let i = 0; i < hex.length; i += 2) {
+    const code = parseInt(hex.slice(i, i + 2), 16);
+    if (code >= 32 && code <= 126) {
+      word += String.fromCharCode(code);
+    } else if (code === 10 || code === 13 || code === 9) {
+      word += ' ';
+    }
+  }
+  return word;
+}
+
 /**
  * Extracts plain text from raw PDF data.
  * Handles:
@@ -252,6 +294,8 @@ export function extractTextFromPdfContent(raw: string): string {
       console.warn('[PDF Parser] CMap parse error:', cmapErr);
     }
 
+    const hasCMap = Object.keys(masterCMap).length > 0;
+
     // ── B. FlateDecode / Decompressed Content Streams ──
     try {
       const streamRegex = /<<([^>]*)>>\s*stream\r?\n([\s\S]*?)\r?\nendstream/g;
@@ -280,49 +324,35 @@ export function extractTextFromPdfContent(raw: string): string {
 
         if (!decompressedStr || !decompressedStr.includes('BT')) continue;
 
-        const lines = decompressedStr.split(/\r?\n/);
-        for (const line of lines) {
-          // TJ array: [<0026>-100<0044>] TJ or [(text) -100 (more)] TJ
-          const tjMatch = line.match(/\[(.*?)\]\s*TJ/);
-          if (tjMatch) {
-            const inner = tjMatch[1];
-            const tokenRegex = /<([0-9A-Fa-f]+)>|\(([^)]*)\)|(-?\d+(?:\.\d+)?)/g;
-            let t: RegExpExecArray | null;
-            let word = '';
-            while ((t = tokenRegex.exec(inner)) !== null) {
-              if (t[1]) {
-                const hex = t[1];
-                for (let i = 0; i < hex.length; i += 4) {
-                  const code = parseInt(hex.slice(i, i + 4), 16);
-                  word += masterCMap[code] !== undefined
-                    ? masterCMap[code]
-                    : (code >= 32 && code <= 126 ? String.fromCharCode(code) : '');
-                }
-              } else if (t[2]) {
-                word += t[2];
-              } else if (t[3]) {
-                if (parseFloat(t[3]) < -100) word += ' ';
-              }
+        // 1. TJ arrays: [<0026>-100<0044>] TJ or [(text) -100 (more)] TJ
+        const tjArrayRegex = /\[(.*?)\]\s*TJ/g;
+        let am: RegExpExecArray | null;
+        while ((am = tjArrayRegex.exec(decompressedStr)) !== null) {
+          const inner = am[1];
+          const tokenRegex = /<([0-9A-Fa-f]+)>|\(([^)]*)\)|(-?\d+(?:\.\d+)?)/g;
+          let t: RegExpExecArray | null;
+          let word = '';
+          while ((t = tokenRegex.exec(inner)) !== null) {
+            if (t[1]) {
+              word += decodePdfHex(t[1], masterCMap, hasCMap);
+            } else if (t[2]) {
+              word += t[2];
+            } else if (t[3]) {
+              if (parseFloat(t[3]) < -100) word += ' ';
             }
-            if (word.trim()) textChunks.push(word);
           }
+          if (word.trim()) textChunks.push(word.trim());
+        }
 
-          // Single Tj operator
-          const singleTj = line.match(/(?:<([0-9A-Fa-f]+)>|\(([^)]*)\))\s*Tj/);
-          if (singleTj) {
-            if (singleTj[1]) {
-              const hex = singleTj[1];
-              let word = '';
-              for (let i = 0; i < hex.length; i += 4) {
-                const code = parseInt(hex.slice(i, i + 4), 16);
-                word += masterCMap[code] !== undefined
-                  ? masterCMap[code]
-                  : (code >= 32 && code <= 126 ? String.fromCharCode(code) : '');
-              }
-              if (word.trim()) textChunks.push(word);
-            } else if (singleTj[2] && singleTj[2].trim()) {
-              textChunks.push(singleTj[2]);
-            }
+        // 2. All Tj operators: <HEX> Tj or (text) Tj
+        const tjRegex = /(?:<([0-9A-Fa-f]+)>|\(([^)]*)\))\s*Tj/g;
+        let tm: RegExpExecArray | null;
+        while ((tm = tjRegex.exec(decompressedStr)) !== null) {
+          if (tm[1]) {
+            const w = decodePdfHex(tm[1], masterCMap, hasCMap);
+            if (w.trim()) textChunks.push(w.trim());
+          } else if (tm[2] && tm[2].trim()) {
+            textChunks.push(tm[2].trim());
           }
         }
       }
@@ -591,7 +621,7 @@ export function parseGoaBillText(text: string): ParsedBillData {
   // Extract Grid Import (KWH_I or domestic KWH)
   try {
     const iFullRow = clean.match(
-      /(?:KWH_I|(?<!Export\s)\bKWH)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+\d+(?:\.\d+)?\s+(\d+(?:\.\d+)?)/i
+      /(?:KWH_I|(?<!Export\s)\bKWH)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?|AVG|EST)\s+\d+(?:\.\d+)?\s+(\d+(?:\.\d+)?)/i
     );
     if (iFullRow) {
       const val = safeParseFloat(iFullRow[6]);
@@ -624,8 +654,8 @@ export function parseGoaBillText(text: string): ParsedBillData {
     } else {
       const iAlt =
         clean.match(/(?:KWH_I|(?<!Export\s)\bKWH)[^\n\r]*?(\d+(?:\.\d+)?)\s+1\.00\s+(\d+(?:\.\d+)?)/i) ||
-        clean.match(/(?:KWH_I|(?<!Export\s)\bKWH)\s+(?:\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4}\s+)?(?:\d+(?:\.\d+)?\s+){2,3}(\d+(?:\.\d+)?)\s+OK/i) ||
-        clean.match(/(?:KWH_I|(?<!Export\s)\bKWH)[^\n\r]*?(\d+(?:\.\d+)?)\s+OK/i);
+        clean.match(/(?:KWH_I|(?<!Export\s)\bKWH)\s+(?:\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4}\s+)?(?:\d+(?:\.\d+)?\s+){2,3}(\d+(?:\.\d+)?)\s+(?:OK|MS|AVG|DL|ND|MF|NP)/i) ||
+        clean.match(/(?:KWH_I|(?<!Export\s)\bKWH)[^\n\r]*?(\d+(?:\.\d+)?)\s+(?:OK|MS|AVG|DL|ND|MF|NP)/i);
       if (iAlt) {
         const lastCapture = iAlt[iAlt.length - 1];
         const val = safeParseFloat(lastCapture);
@@ -639,7 +669,7 @@ export function parseGoaBillText(text: string): ParsedBillData {
   // Extract Grid Export (KWH_E)
   try {
     const eFullRow = clean.match(
-      /KWH_E\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+\d+(?:\.\d+)?\s+(\d+(?:\.\d+)?)/i
+      /KWH_E\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?|AVG|EST)\s+\d+(?:\.\d+)?\s+(\d+(?:\.\d+)?)/i
     );
     if (eFullRow) {
       const val = safeParseFloat(eFullRow[6]);
@@ -647,8 +677,8 @@ export function parseGoaBillText(text: string): ParsedBillData {
     } else {
       const eAlt =
         clean.match(/KWH_E[^\n\r]*?(\d+(?:\.\d+)?)\s+1\.00\s+(\d+(?:\.\d+)?)/i) ||
-        clean.match(/KWH_E\s+(?:\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4}\s+)?(?:\d+(?:\.\d+)?\s+){2,3}(\d+(?:\.\d+)?)\s+OK/i) ||
-        clean.match(/KWH_E[^\n\r]*?(\d+(?:\.\d+)?)\s+OK/i);
+        clean.match(/KWH_E\s+(?:\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4}\s+)?(?:\d+(?:\.\d+)?\s+){2,3}(\d+(?:\.\d+)?)\s+(?:OK|MS|AVG|DL|ND|MF|NP)/i) ||
+        clean.match(/KWH_E[^\n\r]*?(\d+(?:\.\d+)?)\s+(?:OK|MS|AVG|DL|ND|MF|NP)/i);
       if (eAlt) {
         const lastCapture = eAlt[eAlt.length - 1];
         const val = safeParseFloat(lastCapture);
@@ -656,7 +686,8 @@ export function parseGoaBillText(text: string): ParsedBillData {
       } else if (
         /Export KWH\s+Prev\.Balance\s+Curr\.Period\s+Adjusted\s+0/i.test(clean) ||
         /Export KWH[^\d]*?Adjusted\s+0/i.test(clean) ||
-        /Export KWH\s+Prev\.Balance\s+0/i.test(clean)
+        /Export KWH\s+Prev\.Balance\s+0/i.test(clean) ||
+        (result.importKwh !== undefined && hasEdgIndicators)
       ) {
         result.exportKwh = 0;
       }
@@ -690,7 +721,8 @@ export function parseGoaBillText(text: string): ParsedBillData {
         if (val !== undefined) result.openingCreditKwh = val;
       } else if (
         /Export KWH\s+Prev\.Balance\s+Curr\.Period\s+Adjusted\s+0/i.test(clean) ||
-        /Export KWH[^\n\r]*?Adjusted\s+0/i.test(clean)
+        /Export KWH[^\n\r]*?Adjusted\s+0/i.test(clean) ||
+        (result.importKwh !== undefined && hasEdgIndicators)
       ) {
         result.openingCreditKwh = 0;
         result.adjustedCreditKwh = 0;
