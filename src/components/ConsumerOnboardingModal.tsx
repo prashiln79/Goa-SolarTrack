@@ -16,11 +16,14 @@ import {
   Alert,
   KeyboardAvoidingView,
   ScrollView,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT, SHADOW } from '../constants/theme';
 import { SystemProfile } from '../types/solar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const APP_ICON = require('../../assets/icon1.png');
 
 interface ConsumerOnboardingModalProps {
   visible: boolean;
@@ -105,9 +108,11 @@ export const ConsumerOnboardingModal: React.FC<ConsumerOnboardingModalProps> = (
           >
             {/* Header */}
             <View style={styles.header}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="sunny" size={28} color={COLORS.gold} />
-              </View>
+              <Image
+                source={APP_ICON}
+                style={styles.appIcon}
+                resizeMode="cover"
+              />
               <Text style={styles.title}>Goa SolarTrack</Text>
               <Text style={styles.subtitle}>
                 Enter your unique Electricity Consumer ID to access and manage your solar data.
@@ -278,16 +283,11 @@ const styles = StyleSheet.create({
     right: -4,
     padding: SPACING.xs,
   },
-  iconCircle: {
+  appIcon: {
     width: 60,
     height: 60,
-    borderRadius: 30,
-    backgroundColor: COLORS.glowGold,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: RADIUS.lg,
     marginBottom: SPACING.md,
-    borderWidth: 1,
-    borderColor: `${COLORS.gold}44`,
   },
   title: {
     fontSize: 22,

@@ -4,10 +4,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SystemProfile, SyncStatus } from '../types/solar';
 import { COLORS, SPACING, RADIUS, FONT } from '../constants/theme';
+
+const APP_ICON = require('../../assets/icon1.png');
 
 interface AppHeaderProps {
   profile: SystemProfile;
@@ -22,7 +25,7 @@ interface AppHeaderProps {
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   profile,
-  syncStatus,
+  syncStatus: _,
   onAddBill,
   onSettingsPress,
   onConsumerPress,
@@ -39,11 +42,13 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         onPress={onConsumerPress || onSettingsPress}
         activeOpacity={0.7}
       >
-        <View style={styles.sunIcon}>
-          <Ionicons name="sunny" size={20} color={COLORS.gold} />
-        </View>
-        <View>
-          <Text style={styles.appName}>Goa SolarTrack</Text>
+        <Image
+          source={APP_ICON}
+          style={styles.appIcon}
+          resizeMode="cover"
+        />
+        <View style={styles.brandTextContainer}>
+          <Text style={styles.appName} numberOfLines={1}>Goa SolarTrack</Text>
           <Text style={styles.systemInfo} numberOfLines={1}>
             {profile.consumerNumber ? `ID: ${profile.consumerNumber}` : profile.location} · {profile.capacityKw} kW
           </Text>
@@ -58,9 +63,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           onPress={onAddBill}
           activeOpacity={0.8}
         >
-          <Ionicons name="add" size={18} color={COLORS.textInverse} />
+          <Ionicons name="add" size={17} color={COLORS.textInverse} />
           <Text style={styles.addBtnText}>Add Bill</Text>
         </TouchableOpacity>
+
         <TouchableOpacity
           id="btn-header-notifications"
           style={styles.bellBtn}
@@ -69,8 +75,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         >
           <Ionicons
             name={remindersEnabled === false ? 'notifications-off-outline' : 'notifications-outline'}
-            size={24}
-            color={remindersEnabled === false ? '#94A3B8' : '#334155'}
+            size={20}
+            color={remindersEnabled === false ? COLORS.muted : COLORS.textSub}
           />
           {hasNotificationDot && remindersEnabled !== false && (
             <View style={styles.notificationDot} />
@@ -84,8 +90,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: COLORS.surface,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 4,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -97,26 +103,27 @@ const styles = StyleSheet.create({
   brand: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: SPACING.sm + 2,
+    flex: 1,
+    marginRight: SPACING.sm,
   },
-  sunIcon: {
-    width: 40,
-    height: 40,
+  appIcon: {
+    width: 42,
+    height: 42,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.glowGold,
+  },
+  brandTextContainer: {
+    flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: `${COLORS.gold}33`,
   },
   appName: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: FONT.bold,
     color: COLORS.text,
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
   systemInfo: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: COLORS.textMuted,
     marginTop: 1,
   },
@@ -125,46 +132,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.sm,
   },
-  syncDot: {
-    padding: 6,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: COLORS.gold,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: RADIUS.full,
     elevation: 2,
   },
   addBtnText: {
-    fontSize: 13,
-    fontWeight: FONT.bold,
+    fontSize: 12.5,
+    fontWeight: FONT.semi,
     color: COLORS.textInverse,
+    letterSpacing: 0.1,
   },
   bellBtn: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surfaceRaised,
+    borderWidth: 1,
+    borderColor: COLORS.borderSubtle,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-    marginLeft: 2,
   },
   notificationDot: {
     position: 'absolute',
-    top: 5,
-    right: 5,
+    top: 4,
+    right: 4,
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: '#EA580C',
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
+    borderColor: COLORS.surface,
   },
 });
