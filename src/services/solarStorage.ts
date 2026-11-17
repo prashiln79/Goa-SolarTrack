@@ -591,6 +591,21 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
       const localTime = localProfile?.updatedAt ?? 0;
       const remoteTime = remote.updatedAt ?? 0;
 
+      // Robust investment cost resolution: never overwrite a valid local custom cost with empty/0 remote
+      const remoteCost = (remote.systemCostInr !== undefined && remote.systemCostInr !== null && !isNaN(Number(remote.systemCostInr)) && Number(remote.systemCostInr) > 0)
+        ? Number(remote.systemCostInr)
+        : undefined;
+      const localCost = (localProfile?.systemCostInr !== undefined && localProfile.systemCostInr !== null && !isNaN(Number(localProfile.systemCostInr)) && Number(localProfile.systemCostInr) > 0)
+        ? Number(localProfile.systemCostInr)
+        : undefined;
+
+      let resolvedCost: number | undefined;
+      if (remoteTime > localTime && remoteCost !== undefined) {
+        resolvedCost = remoteCost;
+      } else {
+        resolvedCost = localCost !== undefined ? localCost : remoteCost;
+      }
+
       let resolved: SystemProfile;
       if (localTime > remoteTime && localProfile && localTime > 0) {
         // Local is strictly newer: preserve local customizations and push update to Firestore
@@ -600,6 +615,8 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
           id: cNum,
           consumerNumber: cNum,
           capacityKw: Number(localProfile.capacityKw) || Number(remote.capacityKw) || 5.0,
+          systemCostInr: resolvedCost,
+          updatedAt: localTime,
         };
         setDoc(doc(db, 'solar', cNum), cleanForFirestore(resolved), { merge: true }).catch(() => {});
       } else {
@@ -610,9 +627,13 @@ export async function getSystemProfile(consumerNumber?: string): Promise<SystemP
           id: cNum,
           consumerNumber: cNum,
           capacityKw: Number(remote.capacityKw) || Number(localProfile?.capacityKw) || 5.0,
-          systemCostInr: remote.systemCostInr !== undefined ? Number(remote.systemCostInr) : localProfile?.systemCostInr,
-          updatedAt: remote.updatedAt || Date.now(),
+          systemCostInr: resolvedCost,
+          updatedAt: Math.max(remoteTime, localTime),
         };
+        // If local had a custom cost that remote lacked, sync it to Firestore
+        if (localCost !== undefined && remoteCost === undefined) {
+          setDoc(doc(db, 'solar', cNum), cleanForFirestore(resolved), { merge: true }).catch(() => {});
+        }
       }
 
       await AsyncStorage.setItem(keys.PROFILE, JSON.stringify(resolved));
@@ -660,13 +681,21 @@ export async function saveSystemProfile(profile: SystemProfile, consumerNumber?:
   // Merge with existing local profile to guarantee no fields are dropped
   const existingLocal = await getLocalSystemProfile(cNum);
 
+  // Prevent undefined or missing systemCostInr from accidentally wiping out existing cost
+  const resolvedCost = (profile.systemCostInr !== undefined && profile.systemCostInr !== null && !isNaN(Number(profile.systemCostInr)) && Number(profile.systemCostInr) > 0)
+    ? Number(profile.systemCostInr)
+    : (existingLocal?.systemCostInr !== undefined && existingLocal.systemCostInr !== null && !isNaN(Number(existingLocal.systemCostInr)) && Number(existingLocal.systemCostInr) > 0)
+      ? Number(existingLocal.systemCostInr)
+      : undefined;
+
   const profileWithConsumer: SystemProfile = {
     ...(existingLocal || {}),
     ...profile,
     id: cNum,
     consumerNumber: cNum,
     capacityKw: Number(profile.capacityKw) || Number(existingLocal?.capacityKw) || 5.0,
-    updatedAt: Date.now(),
+    systemCostInr: resolvedCost,
+    updatedAt: Math.max(Date.now(), (existingLocal?.updatedAt ?? 0) + 1),
   };
 
   const keys = getKeys(cNum);

@@ -166,3 +166,68 @@ export async function syncCareNotificationsAsync(tasks: ScheduleTaskInput[]): Pr
     }
   }
 }
+
+// ── App Icon Badge & Overdue Alert Management ─────────────────
+const OVERDUE_NOTIFICATION_ID = "solar_care_overdue_alert";
+
+/**
+ * Updates the app launcher icon badge count on Android.
+ * Works directly on Samsung One UI, Xiaomi HyperOS/MIUI, Asus, Huawei, OnePlus, etc.
+ * (Note: Stock Google Pixel/AOSP launchers show a notification dot when notifications exist).
+ * Passing 0 clears the launcher badge count.
+ */
+export async function updateAppBadgeCountAsync(count: number): Promise<boolean> {
+  try {
+    const safeCount = Math.max(0, Math.floor(count || 0));
+    await Notifications.setBadgeCountAsync(safeCount);
+    if (safeCount === 0) {
+      try {
+        await Notifications.dismissNotificationAsync(OVERDUE_NOTIFICATION_ID);
+      } catch {}
+    }
+    return true;
+  } catch (err) {
+    console.debug("Failed to set app icon badge count:", err);
+    return false;
+  }
+}
+
+/**
+ * Synchronizes overdue task status with active notification tray alerts for stock Android.
+ */
+export async function syncOverdueNotificationAsync(
+  overdueCount: number,
+  taskTitles: string[] = []
+): Promise<void> {
+  try {
+    const safeCount = Math.max(0, Math.floor(overdueCount || 0));
+    if (safeCount === 0) {
+      try {
+        await Notifications.dismissNotificationAsync(OVERDUE_NOTIFICATION_ID);
+      } catch {}
+      return;
+    }
+
+    const hasPerm = await getNotificationPermissionStatusAsync();
+    const isEnabled = await getRemindersEnabledAsync();
+    if (!hasPerm || !isEnabled) return;
+
+    await setupNotificationChannelAsync();
+    const taskSummary = taskTitles.length > 0 ? ` (${taskTitles.slice(0, 2).join(", ")})` : "";
+
+    await Notifications.scheduleNotificationAsync({
+      identifier: OVERDUE_NOTIFICATION_ID,
+      content: {
+        title: `${safeCount} Solar Care Task${safeCount > 1 ? "s" : ""} Overdue ⚠️`,
+        body: safeCount === 1
+          ? `Task is past due${taskSummary}. Clean panels keep generation high!`
+          : `${safeCount} tasks need attention${taskSummary}. Tap to view care checklist.`,
+        badge: safeCount,
+        data: { type: "overdue_care", overdueCount: safeCount },
+      },
+      trigger: null,
+    });
+  } catch (err) {
+    console.debug("Failed to sync overdue notification:", err);
+  }
+}
