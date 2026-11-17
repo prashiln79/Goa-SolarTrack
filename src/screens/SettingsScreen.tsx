@@ -106,6 +106,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     };
   }, []);
 
+  // Sync systemCost state whenever profile.systemCostInr updates
+  React.useEffect(() => {
+    if (profile.systemCostInr !== undefined && profile.systemCostInr !== null && Number(profile.systemCostInr) > 0) {
+      setSystemCost(String(profile.systemCostInr));
+    }
+  }, [profile.systemCostInr]);
+
   const populateFields = () => {
     setCapacityKw(profile.capacityKw ? String(profile.capacityKw) : '5.3');
     setLocation(profile.location || 'Panaji, Goa');
@@ -206,7 +213,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       }
       const num = parseFloat(clean);
       if (isNaN(num) || num <= 0) return undefined;
-      if (num <= 50 && clean.includes('.')) {
+      if (num <= 100) {
         return Math.round(num * 100000);
       }
       return Math.round(num);
@@ -221,7 +228,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       panelCount: parseInt(panelCount, 10) || undefined,
       inverterModel: inverterModel.trim() || undefined,
       settlementRateInr: parseFloat(settlementRate) || 3.5,
-      systemCostInr: parsedCost || 300000,
+      systemCostInr: parsedCost !== undefined ? parsedCost : (profile.systemCostInr || 300000),
       updatedAt: Date.now(),
     };
 

@@ -24,7 +24,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { HomeScreen }      from './src/screens/HomeScreen';
 import { BillsScreen }     from './src/screens/BillsScreen';
 import { AnalyticsScreen } from './src/screens/AnalyticsScreen';
-import { CareScreen }      from './src/screens/CareScreen';
+import { CareScreen, getOverdueCareTasksCount } from './src/screens/CareScreen';
 import { SettingsScreen }  from './src/screens/SettingsScreen';
 
 // ── Components ────────────────────────────────────────────────
@@ -64,6 +64,8 @@ import {
   requestNotificationPermissionAsync,
   sendInstantTestNotificationAsync,
   cancelAllCareNotificationsAsync,
+  updateAppBadgeCountAsync,
+  syncOverdueNotificationAsync,
 } from './src/services/notificationService';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -142,7 +144,19 @@ function MainApp() {
       setCleanings(deduplicateCleaningEvents(fetchedCleanings));
 
       if (fetchedProfile) {
-        setProfile(fetchedProfile);
+        setProfile((prev) => {
+          const resolvedCost = (fetchedProfile.systemCostInr !== undefined && fetchedProfile.systemCostInr !== null && !isNaN(Number(fetchedProfile.systemCostInr)) && Number(fetchedProfile.systemCostInr) > 0)
+            ? Number(fetchedProfile.systemCostInr)
+            : (prev.systemCostInr !== undefined && prev.systemCostInr !== null && !isNaN(Number(prev.systemCostInr)) && Number(prev.systemCostInr) > 0)
+              ? Number(prev.systemCostInr)
+              : undefined;
+
+          return {
+            ...prev,
+            ...fetchedProfile,
+            systemCostInr: resolvedCost,
+          };
+        });
       } else {
         setProfile((prev) =>
           prev.consumerNumber === targetConsumer && (prev.updatedAt ?? 0) > 0
@@ -251,6 +265,17 @@ function MainApp() {
     });
   }, [bills, cleanings, profile]);
 
+  // ── Count overdue Care maintenance tasks for the navigation footer badge ──
+  const overdueCareCount = useMemo(() => {
+    return getOverdueCareTasksCount(cleanings, profile.lastCleanedDate);
+  }, [cleanings, profile.lastCleanedDate]);
+
+  // ── Sync app launcher icon badge & overdue notification ───────
+  React.useEffect(() => {
+    updateAppBadgeCountAsync(overdueCareCount);
+    syncOverdueNotificationAsync(overdueCareCount);
+  }, [overdueCareCount]);
+
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await loadAll();
@@ -296,11 +321,16 @@ function MainApp() {
       || (profile.consumerNumber && profile.consumerNumber.trim())
       || getActiveConsumerNumber()
       || 'primary';
+    const resolvedCost = (updated.systemCostInr !== undefined && updated.systemCostInr !== null && !isNaN(Number(updated.systemCostInr)) && Number(updated.systemCostInr) > 0)
+      ? Number(updated.systemCostInr)
+      : profile.systemCostInr;
     const profileToSave: SystemProfile = {
+      ...profile,
       ...updated,
       id: cNum,
       consumerNumber: cNum,
-      capacityKw: Number(updated.capacityKw) || 5.0,
+      capacityKw: Number(updated.capacityKw) || Number(profile.capacityKw) || 5.0,
+      systemCostInr: resolvedCost,
       updatedAt: Date.now(),
     };
     await saveSystemProfile(profileToSave, cNum);
@@ -466,6 +496,7 @@ function MainApp() {
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key;
           const color = isActive ? (tab.color ?? COLORS.gold) : COLORS.textMuted;
+          const showCareBadge = tab.key === 'care' && overdueCareCount > 0;
           return (
             <TouchableOpacity
               key={tab.key}
@@ -473,12 +504,28 @@ function MainApp() {
               style={styles.tabItem}
               onPress={() => setActiveTab(tab.key)}
               activeOpacity={0.7}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={
+                showCareBadge
+                  ? `${tab.label}, ${overdueCareCount} overdue task${overdueCareCount > 1 ? 's' : ''}`
+                  : tab.label
+              }
             >
-              <Ionicons
-                name={(isActive ? tab.iconActive : tab.icon) as any}
-                size={22}
-                color={color}
-              />
+              <View style={styles.tabIconWrapper}>
+                <Ionicons
+                  name={(isActive ? tab.iconActive : tab.icon) as any}
+                  size={22}
+                  color={color}
+                />
+                {showCareBadge && (
+                  <View style={styles.careBadge}>
+                    <Text style={styles.careBadgeText}>
+                      {overdueCareCount > 9 ? '9+' : overdueCareCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
               <Text style={[styles.tabLabel, { color }]}>{tab.label}</Text>
               {isActive && (
                 <View style={[styles.tabIndicator, { backgroundColor: color }]} />
@@ -548,6 +595,33 @@ const styles = StyleSheet.create({
     gap: 3,
     position: 'relative',
     paddingBottom: 4,
+  },
+  tabIconWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  careBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -10,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: COLORS.danger,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: COLORS.surface,
+  },
+  careBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+    textAlign: 'center',
+    includeFontPadding: false,
+    lineHeight: 11,
   },
   tabLabel: {
     fontSize: 10,

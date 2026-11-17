@@ -2,13 +2,13 @@
   "expo": {
     "name": "Goa SolarTrack",
     "slug": "Goa-SolarTrack",
-    "version": "2.0.4",
+    "version": "2.0.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.prashiln79.goasolartrack",
-      "versionCode": 24,
+      "versionCode": 26,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -41,7 +41,7 @@
           "android": {
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-keep public class com.horcrux.svg.** { *; }"
+            "extraProguardRules": "-keep public class com.horcrux.svg.** { *; }\n-keep class me.leolin.shortcutbadger.** { *; }"
           }
         }
       ]

@@ -2,7 +2,7 @@
 // Analytics Screen — Clean, Modern & Human-Friendly Solar Analytics
 // Matches the visual reference: Investment recovery + System health child cards
 // ============================================================
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -78,6 +78,13 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
   const [showEditCost, setShowEditCost] = useState(false);
   const [costInput, setCostInput] = useState(String(payback.systemCostInr));
   const [isSavingCost, setIsSavingCost] = useState(false);
+
+  // Sync costInput whenever payback.systemCostInr updates
+  useEffect(() => {
+    if (payback.systemCostInr && !payback.isBenchmarkCost) {
+      setCostInput(String(payback.systemCostInr));
+    }
+  }, [payback.systemCostInr, payback.isBenchmarkCost]);
 
   // Installed date formatting e.g. "Oct 2026"
   const installedMonthYear = useMemo(() => {
@@ -165,7 +172,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
         updatedAt: Date.now(),
       };
 
-      await saveSystemProfile(updatedProfile);
+      await saveSystemProfile(updatedProfile, profile.consumerNumber);
 
       if (onProfileSave) {
         await onProfileSave(updatedProfile);

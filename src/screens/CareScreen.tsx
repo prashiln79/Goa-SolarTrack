@@ -44,7 +44,7 @@ interface CareScreenProps {
   onNavigateSettings?: () => void;
 }
 
-interface MaintenanceTask {
+export interface MaintenanceTask {
   id: string;
   title: string;
   description: string;
@@ -55,7 +55,7 @@ interface MaintenanceTask {
   providerTag: string;
 }
 
-const DEFAULT_TASKS: MaintenanceTask[] = [
+export const DEFAULT_TASKS: MaintenanceTask[] = [
   {
     id: 'task-inverter',
     title: 'Check inverter',
@@ -144,6 +144,87 @@ function formatDueSummary(diffDays: number, dateStr: string): string {
   }
 }
 
+export interface ScheduledTask extends MaintenanceTask {
+  lastCompletedDate: string | null;
+  nextDueDate: Date;
+  nextDueDateStr: string;
+  diffDays: number;
+  dueText: string;
+  dueSeverity: 'normal' | 'soon' | 'overdue';
+}
+
+/**
+ * Calculates due status for each Care maintenance task.
+ * Single source of truth shared between CareScreen and navigation footer badge.
+ */
+export function calculateCareTasksWithSchedule(
+  cleaningEvents: CleaningEvent[],
+  lastCleanedDate?: string | null
+): ScheduledTask[] {
+  const cleanEvents = deduplicateCleaningEvents(cleaningEvents);
+  return DEFAULT_TASKS.map((task) => {
+    let lastCompletedDate: string | null = null;
+
+    if (task.id === 'task-clean') {
+      const cleanEvt = cleanEvents.find(
+        (e) => !e.skipped && e.provider !== 'Inverter check' && e.provider !== 'Roof inspection'
+      );
+      lastCompletedDate = cleanEvt?.date || lastCleanedDate || null;
+    } else {
+      const matchEvt = cleanEvents.find((e) => e.provider === task.providerTag);
+      lastCompletedDate = matchEvt?.date || null;
+    }
+
+    // Calculate next due date
+    let nextDueDate: Date;
+    if (lastCompletedDate) {
+      const last = parseDate(lastCompletedDate);
+      nextDueDate = new Date(last.getTime() + task.frequencyDays * 86400000);
+    } else {
+      // If never completed, default to frequency from today
+      const now = new Date();
+      nextDueDate = new Date(
+        now.getTime() +
+          (task.id === 'task-clean' ? 24 : task.id === 'task-inverter' ? 14 : 60) * 86400000
+      );
+    }
+
+    const nextDueDateStr = formatDateYMD(nextDueDate);
+    const diffMs = nextDueDate.getTime() - new Date().setHours(0, 0, 0, 0);
+    const diffDays = Math.round(diffMs / 86400000);
+
+    const dueText = formatDueSummary(diffDays, nextDueDateStr);
+    let dueSeverity: 'normal' | 'soon' | 'overdue' = 'normal';
+
+    if (diffDays < 0) {
+      dueSeverity = 'overdue';
+    } else if (diffDays <= 7) {
+      dueSeverity = 'soon';
+    }
+
+    return {
+      ...task,
+      lastCompletedDate,
+      nextDueDate,
+      nextDueDateStr,
+      diffDays,
+      dueText,
+      dueSeverity,
+    };
+  });
+}
+
+/**
+ * Returns the total count of overdue Care maintenance tasks.
+ */
+export function getOverdueCareTasksCount(
+  cleaningEvents: CleaningEvent[],
+  lastCleanedDate?: string | null
+): number {
+  const tasks = calculateCareTasksWithSchedule(cleaningEvents, lastCleanedDate);
+  return tasks.filter((t) => t.dueSeverity === 'overdue').length;
+}
+
 export const CareScreen: React.FC<CareScreenProps> = ({
   careAssessment,
   cleaningEvents,
@@ -188,58 +269,7 @@ export const CareScreen: React.FC<CareScreenProps> = ({
 
   // ── Calculate due status for each task (Sorted by urgency) ──
   const tasksWithSchedule = useMemo(() => {
-    const list = DEFAULT_TASKS.map((task) => {
-      // Find latest completed event matching this task
-      let lastCompletedDate: string | null = null;
-
-      if (task.id === 'task-clean') {
-        const cleanEvt = cleanEvents.find(
-          (e) => !e.skipped && e.provider !== 'Inverter check' && e.provider !== 'Roof inspection'
-        );
-        lastCompletedDate = cleanEvt?.date || profile.lastCleanedDate || null;
-      } else {
-        const matchEvt = cleanEvents.find((e) => e.provider === task.providerTag);
-        lastCompletedDate = matchEvt?.date || null;
-      }
-
-      // Calculate next due date
-      let nextDueDate: Date;
-      if (lastCompletedDate) {
-        const last = parseDate(lastCompletedDate);
-        nextDueDate = new Date(last.getTime() + task.frequencyDays * 86400000);
-      } else {
-        // If never completed, default to frequency from today
-        const now = new Date();
-        nextDueDate = new Date(
-          now.getTime() +
-            (task.id === 'task-clean' ? 24 : task.id === 'task-inverter' ? 14 : 60) * 86400000
-        );
-      }
-
-      const nextDueDateStr = formatDateYMD(nextDueDate);
-      const diffMs = nextDueDate.getTime() - new Date().setHours(0, 0, 0, 0);
-      const diffDays = Math.round(diffMs / 86400000);
-
-      const dueText = formatDueSummary(diffDays, nextDueDateStr);
-      let dueSeverity: 'normal' | 'soon' | 'overdue' = 'normal';
-
-      if (diffDays < 0) {
-        dueSeverity = 'overdue';
-      } else if (diffDays <= 7) {
-        dueSeverity = 'soon';
-      }
-
-      return {
-        ...task,
-        lastCompletedDate,
-        nextDueDate,
-        nextDueDateStr,
-        diffDays,
-        dueText,
-        dueSeverity,
-      };
-    });
-
+    const list = calculateCareTasksWithSchedule(cleanEvents, profile.lastCleanedDate);
     // Sort ascending by diffDays so nearest task appears first
     return list.sort((a, b) => a.diffDays - b.diffDays);
   }, [cleanEvents, profile.lastCleanedDate]);
